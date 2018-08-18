@@ -9,9 +9,8 @@
 // for MapChange type
 #include <mapchooser>
 
-#define PLUGIN_VERSION "1.0.4.2"
-#define VOTE_EXTEND "##extend##"
-#define VOTE_DONTCHANGE "##dontchange##"
+#define PLUGIN_VERSION "1.0.4.3"
+
 
 Database g_hDatabase;
 char g_cSQLPrefix[32];
@@ -61,8 +60,13 @@ Menu g_hNominateMenu;
 Menu g_hVoteMenu;
 
 /* Player Data */
-bool	g_bRockTheVote[MAXPLAYERS + 1];
+bool g_bRockTheVote[MAXPLAYERS + 1];
 char g_cNominatedMap[MAXPLAYERS + 1][PLATFORM_MAX_PATH];
+
+Handle g_hRetryTimer = null;
+Handle g_hForward_OnRTV = null;
+Handle g_hForward_OnUnRTV = null;
+Handle g_hForward_OnSuccesfulRTV = null;
 
 enum MapListType
 {
@@ -83,7 +87,13 @@ public Plugin myinfo =
 public APLRes AskPluginLoad2( Handle myself, bool late, char[] error, int err_max )
 {
 	g_bLate = late;
-	
+
+
+	g_hForward_OnRTV = CreateGlobalForward("SMC_OnRTV", ET_Event, Param_Cell);
+	g_hForward_OnUnRTV = CreateGlobalForward("SMC_OnUnRTV", ET_Event, Param_Cell);
+	g_hForward_OnSuccesfulRTV = CreateGlobalForward("SMC_OnSuccesfulRTV", ET_Event);
+
+
 	return APLRes_Success;
 }
 
@@ -143,6 +153,8 @@ public void OnPluginStart()
 public void OnMapStart()
 {
 	GetCurrentMap( g_cMapName, sizeof(g_cMapName) );
+
+	SetNextMap(g_cMapName);
 	
 	// disable rtv if delay time is > 0
 	g_fMapStartTime = GetGameTime();
@@ -371,6 +383,18 @@ void InitiateMapVote( MapChange when )
 {
 	g_ChangeTime = when;
 	g_bMapVoteStarted = true;
+
+	if (IsVoteInProgress())
+	{
+		// Can't start a vote, try again in 5 seconds.
+		//g_RetryTimer = CreateTimer(5.0, Timer_StartMapVote, _, TIMER_FLAG_NO_MAPCHANGE);
+		
+		DataPack data;
+		g_hRetryTimer = CreateDataTimer(5.0, Timer_StartMapVote, data, TIMER_FLAG_NO_MAPCHANGE);
+		data.WriteCell(when);
+		data.Reset();
+		return;
+	}
 	
 	// create menu
 	Menu menu = new Menu( Handler_MapVoteMenu, MENU_ACTIONS_ALL );
@@ -491,9 +515,8 @@ public void Handler_MapVoteFinished(Menu menu, int num_votes, int num_clients, c
 			menu.GetItem(item_info[1][VOTEINFO_ITEM_INDEX], map, sizeof(map), _, info2, sizeof(info2));
 			g_hVoteMenu.AddItem(map, info2);
 			
-			int voteDuration = g_cvMapVoteDuration.IntValue;
 			g_hVoteMenu.ExitButton = true;
-			g_hVoteMenu.DisplayVoteToAll(voteDuration);
+			g_hVoteMenu.DisplayVoteToAll( RoundFloat( g_cvMapVoteDuration.FloatValue * 60.0 ) );
 			
 			/* Notify */
 			float map1percent = float(item_info[0][VOTEINFO_ITEM_VOTES])/ float(num_votes) * 100;
@@ -510,7 +533,24 @@ public void Handler_MapVoteFinished(Menu menu, int num_votes, int num_clients, c
 	Handler_VoteFinishedGeneric(menu, num_votes, num_clients, client_info, num_items, item_info);
 }
 
+public Action Timer_StartMapVote(Handle timer, DataPack data)
+{
+	if (timer == g_hRetryTimer)
+	{
+		g_hRetryTimer = null;
+	}
+	
+	if (!g_aMapList.Length || g_bMapVoteFinished || g_bMapVoteStarted)
+	{
+		return Plugin_Stop;
+	}
+	
+	MapChange when = view_as<MapChange>(data.ReadCell());
 
+	InitiateMapVote(when);
+
+	return Plugin_Stop;
+}
 
 public void Handler_VoteFinishedGeneric(Menu menu, int num_votes, int num_clients, const int[][] client_info, int num_items, const int[][] item_info)
 {
@@ -521,7 +561,7 @@ public void Handler_VoteFinishedGeneric(Menu menu, int num_votes, int num_client
 
 	PrintToChatAll( "#1 vote was %s (%s)", map, (g_ChangeTime == MapChange_Instant) ? "instant" : "map end" );
  
-	if (strcmp(map, VOTE_EXTEND, false) == 0)
+	if( StrEqual( map, "extend" ) )
 	{
 		g_iExtendCount++;
 		
@@ -542,7 +582,7 @@ public void Handler_VoteFinishedGeneric(Menu menu, int num_votes, int num_client
 		
 		ClearRTV();
 	}
-	else if(strcmp(map, VOTE_DONTCHANGE, false) == 0)
+	else if( StrEqual( map, "dontchange" ) )
 	{
 		PrintToChatAll("[SMC] %t", "Current Map Stays", RoundToFloor(float(item_info[0][VOTEINFO_ITEM_VOTES])/float(num_votes)*100), num_votes);
 		LogAction(-1, -1, "Voting for next map has finished. 'No Change' was the winner");
@@ -560,9 +600,15 @@ public void Handler_VoteFinishedGeneric(Menu menu, int num_votes, int num_client
 		}
 		else if( g_ChangeTime == MapChange_Instant )
 		{
+			if( GetRTVVotesNeeded() <= 0 )
+			{
+				Call_StartForward( g_hForward_OnSuccesfulRTV );
+				Call_Finish();
+			}
+
 			DataPack data;
 			CreateDataTimer(2.0, Timer_ChangeMap, data);
-			data.WriteString(map);
+			data.WriteString( map );
 			ClearRTV();
 		}
 		
@@ -755,6 +801,7 @@ public Action Timer_ChangeMap( Handle timer, DataPack data )
 	char map[PLATFORM_MAX_PATH];
 	data.Reset();
 	data.ReadString( map, sizeof(map) );
+	
 	ForceChangeLevel( map, "RTV Mapvote" );
 }
 
@@ -955,7 +1002,7 @@ public Action Command_RockTheVote( int client, int args )
 	}
 	else
 	{
-		g_bRockTheVote[client] = true;
+		RTVClient( client );
 		CheckRTV( client );
 	}
 	
@@ -995,7 +1042,8 @@ void CheckRTV( int client = 0 )
 			{
 				PrintToChatAll( "[SMC] RTV vote now majority, map changing to %s ...", map );
 			}
-			
+
+			SetNextMap( map );
 			ChangeMapDelayed( map );
 		}
 		else
@@ -1026,7 +1074,7 @@ public Action Command_UnRockTheVote( int client, int args )
 	}
 	else if( g_bRockTheVote[client] )
 	{
-		g_bRockTheVote[client] = false;
+		UnRTVClient( client );
 		
 		int needed = GetRTVVotesNeeded();
 		if( needed > 0 )
@@ -1052,6 +1100,22 @@ public Action Command_Debug( int client, int args )
 	return Plugin_Continue;
 }
 #endif
+
+void RTVClient( int client )
+{
+	g_bRockTheVote[client] = true;
+	Call_StartForward(g_hForward_OnRTV);
+	Call_PushCell(client);
+	Call_Finish();
+}
+
+void UnRTVClient( int client )
+{
+	g_bRockTheVote[client] = false;
+	Call_StartForward(g_hForward_OnUnRTV);
+	Call_PushCell(client);
+	Call_Finish();
+}
 
 /* Stocks */
 stock void SQL_SetPrefix()

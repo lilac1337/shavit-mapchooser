@@ -32,3 +32,10 @@ A SourceMod mapchooser plugin designed for use with shavits timer
  - sm_unnominate - Removes nominations
  - sm_rtv - Lets players Rock The Vote
  - sm_unrtv - Lets players un-Rock The Vote
+
+ 
+## Available Forwards
+
+ - SMC_OnSuccesfulRTV - Called when the map changes from an RTV.
+ - SMC_OnRTV - Called when a client uses !rtv.
+ - SMC_OnUnRTV - Called when a client uses !unrtv.
