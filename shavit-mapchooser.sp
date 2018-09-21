@@ -38,6 +38,7 @@ ConVar g_cvMapVoteExtendTime;
 ConVar g_cvMapVoteShowTier;
 ConVar g_cvMapVoteRunOff;
 ConVar g_cvMapVoteRunOffPerc;
+ConVar g_cvDisplayTimeRemaining;
 
 /* Map arrays */
 ArrayList g_aMapList;
@@ -127,6 +128,9 @@ public void OnPluginStart()
 
 	g_cvMapVoteRunOff = CreateConVar("smc_mapvote_runoff", "1", "Hold run of votes if winning choice is less than a certain margin", _, true, 0.0, true, 1.0);
 	g_cvMapVoteRunOffPerc = CreateConVar("smc_mapvote_runoffpercent", "50", "If winning choice has less than this percent of votes, hold a runoff", _, true, 0.0, true, 100.0);
+
+	g_cvDisplayTimeRemaining = CreateConVar("smc_display_timeleft", "1", "Display remaining messages in chat", _, true, 0.0, true, 1.0);
+	
 
 
 	AutoExecConfig();
@@ -260,7 +264,7 @@ public Action Timer_OnMapTimeLeftChanged(Handle Timer)
 				}
 			}
 		}
-		else if( g_bMapVoteFinished )
+		else if( g_bMapVoteFinished && g_cvDisplayTimeRemaining.BoolValue )
 		{
 			switch( timeleft )
 			{
