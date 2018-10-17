@@ -38,12 +38,14 @@ ConVar g_cvMapVoteExtendTime;
 ConVar g_cvMapVoteShowTier;
 ConVar g_cvMapVoteRunOff;
 ConVar g_cvMapVoteRunOffPerc;
+ConVar g_cvMapVoteRevoteTime;
 ConVar g_cvDisplayTimeRemaining;
+
 
 /* Map arrays */
 ArrayList g_aMapList;
-ArrayList g_aMapTiers;
 ArrayList g_aNominateList;
+ArrayList g_aAllMapsList;
 ArrayList g_aOldMaps;
 
 /* Map Data */
@@ -54,6 +56,7 @@ MapChange g_ChangeTime;
 bool g_bMapVoteStarted;
 bool g_bMapVoteFinished;
 float g_fMapStartTime;
+float g_fLastMapvoteTime = 0.0;
 
 int g_iExtendCount;
 
@@ -73,7 +76,8 @@ enum MapListType
 {
 	MapListZoned,
 	MapListFile,
-	MapListFolder
+	MapListFolder,
+	MapListMixed
 }
 
 public Plugin myinfo =
@@ -107,11 +111,11 @@ public void OnPluginStart()
 	LoadTranslations("nominations.phrases");
 
 	g_aMapList = new ArrayList( ByteCountToCells(PLATFORM_MAX_PATH) );
-	g_aMapTiers = new ArrayList();
+	g_aAllMapsList = new ArrayList( ByteCountToCells(PLATFORM_MAX_PATH) );
 	g_aNominateList = new ArrayList( ByteCountToCells(PLATFORM_MAX_PATH) );
 	g_aOldMaps = new ArrayList( ByteCountToCells(PLATFORM_MAX_PATH) );
 	
-	g_cvMapListType = CreateConVar( "smc_maplist_type", "0", "Where the plugin should get the map list from. 0 = zoned maps from database, 1 = from maplist file (maplist.txt), 2 = from maps folder", _, true, 0.0, true, 2.0 );
+	g_cvMapListType = CreateConVar( "smc_maplist_type", "0", "Where the plugin should get the map list from. 0 = zoned maps from database, 1 = from maplist file (mapcycle.txt), 2 = from maps folder, 3 = from zoned maps and confirmed by maplist file", _, true, 0.0, true, 3.0 );
 	
 	g_cvMapVoteBlockMapInterval = CreateConVar( "smc_mapvote_blockmap_interval", "1", "How many maps should be played before a map can be nominated again", _, true, 0.0, false );
 	g_cvMapVoteEnableNoVote = CreateConVar( "smc_mapvote_enable_novote", "1", "Whether players are able to choose 'No Vote' in map vote", _, true, 0.0, true, 1.0 );
@@ -128,7 +132,7 @@ public void OnPluginStart()
 
 	g_cvMapVoteRunOff = CreateConVar("smc_mapvote_runoff", "1", "Hold run of votes if winning choice is less than a certain margin", _, true, 0.0, true, 1.0);
 	g_cvMapVoteRunOffPerc = CreateConVar("smc_mapvote_runoffpercent", "50", "If winning choice has less than this percent of votes, hold a runoff", _, true, 0.0, true, 100.0);
-
+	g_cvMapVoteRevoteTime = CreateConVar("smc_mapvote_revotetime", "0", "How many seconds after a failed mapvote before rtv is enabled again", _, true, 0.0);
 	g_cvDisplayTimeRemaining = CreateConVar("smc_display_timeleft", "1", "Display remaining messages in chat", _, true, 0.0, true, 1.0);
 	
 
@@ -147,6 +151,7 @@ public void OnPluginStart()
 	if( g_bLate )
 	{
 		OnMapStart();
+		OnConfigsExecuted();
 	}
 	
 	#if defined DEBUG
@@ -162,6 +167,7 @@ public void OnMapStart()
 	
 	// disable rtv if delay time is > 0
 	g_fMapStartTime = GetGameTime();
+	g_fLastMapvoteTime = GetGameTime();
 	
 	g_iExtendCount = 0;
 	
@@ -169,23 +175,28 @@ public void OnMapStart()
 	g_bMapVoteStarted = false;
 	
 	g_aNominateList.Clear();
-	for( int i = 1; i <= MaxClients; i++ )
+	for( int i = 1; i <= MaxClients; ++i )
 	{
 		g_cNominatedMap[i][0] = '\0';
 	}
 	ClearRTV();
 	
+	
+	CreateTimer( 2.0, Timer_OnMapTimeLeftChanged, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE );
+}
+
+public void OnConfigsExecuted()
+{
 	// reload maplist array
 	LoadMapList();
 	// cache the nominate menu so that it isn't being built every time player opens it
-	
-	CreateTimer( 2.0, Timer_OnMapTimeLeftChanged, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE );
 }
 
 public Action OnRoundStartPost( Event event, const char[] name, bool dontBroadcast )
 {
 	// disable rtv if delay time is > 0
 	g_fMapStartTime = GetGameTime();
+	g_fLastMapvoteTime = GetGameTime();
 	
 	g_iExtendCount = 0;
 	
@@ -428,12 +439,8 @@ void InitiateMapVote( MapChange when )
 		
 		if( g_cvMapVoteShowTier.BoolValue )
 		{
-			int tier = 1;
-			int idx = g_aMapList.FindString( map );
-			if( idx != -1 )
-			{
-				tier = g_aMapTiers.Get( idx );
-			}
+			int tier = Shavit_GetMapTier( mapdisplay );
+			
 			
 			Format( mapdisplay, sizeof(mapdisplay), "[T%i] %s", tier, mapdisplay );
 		}
@@ -471,7 +478,7 @@ void InitiateMapVote( MapChange when )
 		
 		if( g_cvMapVoteShowTier.BoolValue )
 		{
-			int tier = g_aMapTiers.Get( rand );
+			int tier = Shavit_GetMapTier( mapdisplay );
 			
 			Format( mapdisplay, sizeof(mapdisplay), "[T%i] %s", tier, mapdisplay );
 		}
@@ -583,6 +590,7 @@ public void Handler_VoteFinishedGeneric(Menu menu, int num_votes, int num_client
 		
 		// We extended, so we'll have to vote again.
 		g_bMapVoteStarted = false;
+		g_fLastMapvoteTime = GetGameTime();
 		
 		ClearRTV();
 	}
@@ -593,6 +601,7 @@ public void Handler_VoteFinishedGeneric(Menu menu, int num_votes, int num_client
 
 		g_bMapVoteFinished = false;
 		g_bMapVoteStarted = false;
+		g_fLastMapvoteTime = GetGameTime();
 		
 		ClearRTV();
 	}
@@ -715,7 +724,8 @@ void ExtendMap( int time = 0 )
 void LoadMapList()
 {
 	g_aMapList.Clear();
-	g_aMapTiers.Clear();
+	g_aAllMapsList.Clear();
+	
 
 	MapListType type = view_as<MapListType>( g_cvMapListType.IntValue );
 	switch( type )
@@ -728,18 +738,34 @@ void LoadMapList()
 			char buffer[512];
 			g_hDatabase = SQL_Connect( "shavit", true, buffer, sizeof(buffer) );
 
-			Format( buffer, sizeof(buffer), "SELECT zones.map, tiers.tier FROM `%smapzones` zones JOIN `%smaptiers` tiers ON zones.map = tiers.map WHERE type = 1 AND track = 0 ORDER BY `map`", g_cSQLPrefix, g_cSQLPrefix );
+			Format( buffer, sizeof(buffer), "SELECT map FROM `%smapzones` WHERE type = 1 AND track = 0 ORDER BY `map`", g_cSQLPrefix );
 			g_hDatabase.Query( LoadZonedMapsCallback, buffer, _, DBPrio_High );
 		}
 		case MapListFolder:
 		{
 			LoadFromMapsFolder( g_aMapList );
+			CreateNominateMenu();
 		}
 		case MapListFile:
 		{
 			ReadMapList( g_aMapList, _, "default" );
+			CreateNominateMenu();
+		}
+		case MapListMixed:
+		{
+			delete g_hDatabase;
+			SQL_SetPrefix();
+
+			ReadMapList( g_aAllMapsList, _, "default" );
+
+			char buffer[512];
+			g_hDatabase = SQL_Connect( "shavit", true, buffer, sizeof(buffer) );
+			Format( buffer, sizeof(buffer), "SELECT map FROM `%smapzones` WHERE type = 1 AND track = 0 ORDER BY `map`", g_cSQLPrefix );
+			g_hDatabase.Query( LoadZonedMapsCallbackMixed, buffer, _, DBPrio_High );
 		}
 	}
+
+	
 }
 
 public void LoadZonedMapsCallback( Database db, DBResultSet results, const char[] error, any data )
@@ -760,7 +786,36 @@ public void LoadZonedMapsCallback( Database db, DBResultSet results, const char[
 		if( ( FindMap( map, map2, sizeof(map2) ) == FindMap_Found ) || ( FindMap( map, map2, sizeof(map2) ) == FindMap_FuzzyMatch ) )
 		{						  
 			g_aMapList.PushString( map2 );
-			g_aMapTiers.Push( results.FetchInt( 1 ) );
+		}
+	}
+	
+	CreateNominateMenu();
+}
+
+public void LoadZonedMapsCallbackMixed( Database db, DBResultSet results, const char[] error, any data )
+{
+	if( results == null )
+	{
+		LogError( "[SMC] - (LoadMapZonesCallbackMixed) - %s", error );
+		return;	
+	}
+
+	char map[PLATFORM_MAX_PATH];
+	char map2[PLATFORM_MAX_PATH];
+	char buffer[PLATFORM_MAX_PATH];
+	while( results.FetchRow() )
+	{	
+		results.FetchString( 0, map, sizeof(map) );//db mapname
+		
+		for (int i = 0; i < g_aAllMapsList.Length; ++i)
+		{
+			g_aAllMapsList.GetString(i, buffer, sizeof(buffer));//maplistmapname
+			GetMapDisplayName(buffer, map2, sizeof(map2));//get's the displayname of the map
+
+			if ( StrEqual(map, map2, false) )
+			{	
+				g_aMapList.PushString( buffer ); 
+			}
 		}
 	}
 	
@@ -788,7 +843,15 @@ bool SMC_FindMap( const char[] mapname, char[] output, int maxlen )
 bool IsRTVEnabled()
 {
 	float time = GetGameTime();
-	return ( time - g_fMapStartTime > g_cvRTVDelayTime.FloatValue * 60 );
+	if( time - g_fLastMapvoteTime < g_cvMapVoteRevoteTime.FloatValue * 60 )
+	{
+		return false;
+	}
+	else if( time - g_fMapStartTime > g_cvRTVDelayTime.FloatValue * 60 )
+	{
+		return true;
+	}
+	return true;
 }
 
 void ClearRTV()
@@ -916,9 +979,8 @@ void CreateNominateMenu()
 	g_hNominateMenu.SetTitle( "Nominate Menu" );
 	
 	int length = g_aMapList.Length;
-	for( int i = 0; i < length; i++ )
+	for( int i = 0; i < length; ++i )
 	{
-		int tier = g_aMapTiers.Get( i );
 		
 		char mapname[PLATFORM_MAX_PATH];
 		g_aMapList.GetString( i, mapname, sizeof(mapname) );
@@ -936,8 +998,11 @@ void CreateNominateMenu()
 		
 		char mapdisplay[PLATFORM_MAX_PATH + 32];
 		GetMapDisplayName(mapname, mapdisplay, sizeof(mapdisplay));
+
+
+		int tier = Shavit_GetMapTier( mapdisplay );
+
 		Format( mapdisplay, sizeof(mapdisplay), "%s (Tier %i)", mapdisplay, tier );
-		
 		
 		g_hNominateMenu.AddItem( mapname, mapdisplay );
 	}
