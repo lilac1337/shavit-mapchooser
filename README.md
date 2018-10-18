@@ -17,7 +17,9 @@ A SourceMod mapchooser plugin designed for use with shavits timer
  - smc_rtv_minimum (Default = -1, Min = -1) - Minimum number of points a player must have before being able to RTV, or -1 to allow everyone
  - smc_rtv_delay (Default = 5, Min = 0) - Time in minutes after map start before players should be allowed to RTV
  - smc_rtv_required_percentage (Default = 50, Min = 1, Max = 100) - Percentage of players who have RTVed before a map vote is initiated
- 
+ - smc_mapvote_runoff (Default = 1, Min = 0, Max = 1) - Hold run of votes if winning choice is less than a certain margin
+	- smc_mapvote_runoffpercent", (Default = 50, Min = 0, Max = 100) - If winning choice has less than this percent of votes, hold a runoff
+
 ## Available Commands
 
 ### Admin Commands
