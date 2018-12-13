@@ -9,7 +9,7 @@
 // for MapChange type
 #include <mapchooser>
 
-#define PLUGIN_VERSION "1.0.4.3"
+#define PLUGIN_VERSION "1.0.4.4"
 
 
 Database g_hDatabase;
@@ -132,9 +132,8 @@ public void OnPluginStart()
 
 	g_cvMapVoteRunOff = CreateConVar("smc_mapvote_runoff", "1", "Hold run of votes if winning choice is less than a certain margin", _, true, 0.0, true, 1.0);
 	g_cvMapVoteRunOffPerc = CreateConVar("smc_mapvote_runoffpercent", "50", "If winning choice has less than this percent of votes, hold a runoff", _, true, 0.0, true, 100.0);
-	g_cvMapVoteRevoteTime = CreateConVar("smc_mapvote_revotetime", "0", "How many seconds after a failed mapvote before rtv is enabled again", _, true, 0.0);
+	g_cvMapVoteRevoteTime = CreateConVar("smc_mapvote_revotetime", "0", "How many minutes after a failed mapvote before rtv is enabled again", _, true, 0.0);
 	g_cvDisplayTimeRemaining = CreateConVar("smc_display_timeleft", "1", "Display remaining messages in chat", _, true, 0.0, true, 1.0);
-	
 
 
 	AutoExecConfig();
@@ -167,7 +166,7 @@ public void OnMapStart()
 	
 	// disable rtv if delay time is > 0
 	g_fMapStartTime = GetGameTime();
-	g_fLastMapvoteTime = GetGameTime();
+	g_fLastMapvoteTime = 0.0;
 	
 	g_iExtendCount = 0;
 	
@@ -196,7 +195,7 @@ public Action OnRoundStartPost( Event event, const char[] name, bool dontBroadca
 {
 	// disable rtv if delay time is > 0
 	g_fMapStartTime = GetGameTime();
-	g_fLastMapvoteTime = GetGameTime();
+	g_fLastMapvoteTime = 0.0;
 	
 	g_iExtendCount = 0;
 	
@@ -224,6 +223,7 @@ public void OnMapEnd()
 	
 	g_iExtendCount = 0;
 	
+									
 	g_bMapVoteFinished = false;
 	g_bMapVoteStarted = false;
 	
@@ -678,7 +678,7 @@ public int Handler_MapVoteMenu( Menu menu, MenuAction action, int param1, int pa
 				
 				// Make sure the first map in the menu isn't one of the special items.
 				// This would mean there are no real maps in the menu, because the special items are added after all maps. Don't do anything if that's the case.
-				if( strcmp( map, "extend", false ) != 0 )
+				if( strcmp( map, "extend", false ) != 0 && strcmp(map, "dontchange", false) != 0 )
 				{
 					// Get a random map from the list.
 					
@@ -688,9 +688,11 @@ public int Handler_MapVoteMenu( Menu menu, MenuAction action, int param1, int pa
 						int item = GetRandomInt(0, count - 1);
 						menu.GetItem(item, map, sizeof(map));
 					}
-					while( strcmp( map, "extend", false ) == 0 );
+					while( strcmp( map, "extend", false ) == 0 || strcmp(map, "dontchange", false) == 0 );
 					
 					SetNextMap( map );
+					PrintToChatAll("[SMC] %t", "Nextmap Voting Finished", map, 0, 0);
+					LogAction(-1, -1, "Voting for next map has finished. Nextmap: %s.", map);
 					g_bMapVoteFinished = true;
 				}
 			}
@@ -738,7 +740,7 @@ void LoadMapList()
 			char buffer[512];
 			g_hDatabase = SQL_Connect( "shavit", true, buffer, sizeof(buffer) );
 
-			Format( buffer, sizeof(buffer), "SELECT map FROM `%smapzones` WHERE type = 1 AND track = 0 ORDER BY `map`", g_cSQLPrefix );
+			Format( buffer, sizeof(buffer), "SELECT `map` FROM `%smapzones` WHERE `type` = 1 AND `track` = 0 ORDER BY `map`", g_cSQLPrefix );
 			g_hDatabase.Query( LoadZonedMapsCallback, buffer, _, DBPrio_High );
 		}
 		case MapListFolder:
@@ -760,7 +762,7 @@ void LoadMapList()
 
 			char buffer[512];
 			g_hDatabase = SQL_Connect( "shavit", true, buffer, sizeof(buffer) );
-			Format( buffer, sizeof(buffer), "SELECT map FROM `%smapzones` WHERE type = 1 AND track = 0 ORDER BY `map`", g_cSQLPrefix );
+			Format( buffer, sizeof(buffer), "SELECT `map` FROM `%smapzones` WHERE `type` = 1 AND `track` = 0 ORDER BY `map`", g_cSQLPrefix );
 			g_hDatabase.Query( LoadZonedMapsCallbackMixed, buffer, _, DBPrio_High );
 		}
 	}
@@ -843,15 +845,19 @@ bool SMC_FindMap( const char[] mapname, char[] output, int maxlen )
 bool IsRTVEnabled()
 {
 	float time = GetGameTime();
-	if( time - g_fLastMapvoteTime < g_cvMapVoteRevoteTime.FloatValue * 60 )
+
+	if( g_fLastMapvoteTime != 0.0 )
 	{
-		return false;
-	}
+		if( time - g_fLastMapvoteTime > g_cvMapVoteRevoteTime.FloatValue * 60 )
+		{
+			return true;
+		}
+	} 	
 	else if( time - g_fMapStartTime > g_cvRTVDelayTime.FloatValue * 60 )
 	{
 		return true;
 	}
-	return true;
+	return false;
 }
 
 void ClearRTV()
@@ -981,19 +987,19 @@ void CreateNominateMenu()
 	int length = g_aMapList.Length;
 	for( int i = 0; i < length; ++i )
 	{
-		
+		int style = ITEMDRAW_DEFAULT;
 		char mapname[PLATFORM_MAX_PATH];
 		g_aMapList.GetString( i, mapname, sizeof(mapname) );
 		
 		if( StrEqual( mapname, g_cMapName ) )
 		{
-			continue;
+			style = ITEMDRAW_DISABLED;
 		}
 		
 		int idx = g_aOldMaps.FindString( mapname );
 		if( idx != -1 )
 		{
-			continue;
+			style = ITEMDRAW_DISABLED;
 		}
 		
 		char mapdisplay[PLATFORM_MAX_PATH + 32];
@@ -1004,7 +1010,7 @@ void CreateNominateMenu()
 
 		Format( mapdisplay, sizeof(mapdisplay), "%s (Tier %i)", mapdisplay, tier );
 		
-		g_hNominateMenu.AddItem( mapname, mapdisplay );
+		g_hNominateMenu.AddItem( mapname, mapdisplay, style );
 	}
 }
 
