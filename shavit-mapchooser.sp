@@ -2,18 +2,16 @@
 #pragma newdecls required
 
 #include <sourcemod>
-#include <shavit>
 #include <cstrike>
 
 #undef REQUIRE_PLUGIN
 // for MapChange type
 #include <mapchooser>
 
-#define PLUGIN_VERSION "1.0.4.4"
+#define PLUGIN_VERSION "1.0.4.5"
 
 
 Database g_hDatabase;
-char g_cSQLPrefix[32];
 
 bool g_bLate;
 
@@ -24,7 +22,6 @@ bool g_bDebug;
 /* ConVars */
 ConVar g_cvRTVRequiredPercentage;
 ConVar g_cvRTVAllowSpectators;
-ConVar g_cvRTVMinimumPoints;
 ConVar g_cvRTVDelayTime;
 
 ConVar g_cvMapListType;
@@ -35,7 +32,6 @@ ConVar g_cvMapVoteBlockMapInterval;
 ConVar g_cvMapVoteExtendLimit;
 ConVar g_cvMapVoteEnableNoVote;
 ConVar g_cvMapVoteExtendTime;
-ConVar g_cvMapVoteShowTier;
 ConVar g_cvMapVoteRunOff;
 ConVar g_cvMapVoteRunOffPerc;
 ConVar g_cvMapVoteRevoteTime;
@@ -84,7 +80,7 @@ public Plugin myinfo =
 {
 	name = "shavit - MapChooser",
 	author = "SlidyBat",
-	description = "Automated Map Voting and nominating with Shavit timer integration",
+	description = "Automated Map Voting and nominating",
 	version = PLUGIN_VERSION,
 	url = ""
 }
@@ -121,12 +117,10 @@ public void OnPluginStart()
 	g_cvMapVoteEnableNoVote = CreateConVar( "smc_mapvote_enable_novote", "1", "Whether players are able to choose 'No Vote' in map vote", _, true, 0.0, true, 1.0 );
 	g_cvMapVoteExtendLimit = CreateConVar( "smc_mapvote_extend_limit", "3", "How many times players can choose to extend a single map (0 = block extending)", _, true, 0.0, false );
 	g_cvMapVoteExtendTime = CreateConVar( "smc_mapvote_extend_time", "10", "How many minutes should the map be extended by if the map is extended through a mapvote", _, true, 1.0, false );
-	g_cvMapVoteShowTier = CreateConVar( "smc_mapvote_show_tier", "1", "Whether the map tier should be displayed in the map vote", _, true, 0.0, true, 1.0 );
 	g_cvMapVoteDuration = CreateConVar( "smc_mapvote_duration", "1", "Duration of time in minutes that map vote menu should be displayed for", _, true, 0.1, false );
 	g_cvMapVoteStartTime = CreateConVar( "smc_mapvote_start_time", "5", "Time in minutes before map end that map vote starts", _, true, 1.0, false );
 	
 	g_cvRTVAllowSpectators = CreateConVar( "smc_rtv_allow_spectators", "1", "Whether spectators should be allowed to RTV", _, true, 0.0, true, 1.0 );
-	g_cvRTVMinimumPoints = CreateConVar( "smc_rtv_minimum_points", "-1", "Minimum number of points a player must have before being able to RTV, or -1 to allow everyone", _, true, -1.0, false );
 	g_cvRTVDelayTime = CreateConVar( "smc_rtv_delay", "5", "Time in minutes after map start before players should be allowed to RTV", _, true, 0.0, false );
 	g_cvRTVRequiredPercentage = CreateConVar( "smc_rtv_required_percentage", "50", "Percentage of players who have RTVed before a map vote is initiated", _, true, 1.0, true, 100.0 );
 
@@ -436,18 +430,8 @@ void InitiateMapVote( MapChange when )
 	{
 		g_aNominateList.GetString( i, map, sizeof(map) );
 		GetMapDisplayName(map, mapdisplay, sizeof(mapdisplay));	
-		
-		if( g_cvMapVoteShowTier.BoolValue )
-		{
-			int tier = Shavit_GetMapTier( mapdisplay );
-			
-			
-			Format( mapdisplay, sizeof(mapdisplay), "[T%i] %s", tier, mapdisplay );
-		}
-		else
-		{
-			strcopy( mapdisplay, sizeof(mapdisplay), map );
-		}
+
+		strcopy( mapdisplay, sizeof(mapdisplay), map );
 		
 		menu.AddItem( map, mapdisplay );
 		
@@ -475,15 +459,7 @@ void InitiateMapVote( MapChange when )
 			i--;
 			continue;
 		}
-		
-		if( g_cvMapVoteShowTier.BoolValue )
-		{
-			int tier = Shavit_GetMapTier( mapdisplay );
-			
-			Format( mapdisplay, sizeof(mapdisplay), "[T%i] %s", tier, mapdisplay );
-		}
 
-		
 		menu.AddItem( map, mapdisplay );
 	}
 	
@@ -732,17 +708,6 @@ void LoadMapList()
 	MapListType type = view_as<MapListType>( g_cvMapListType.IntValue );
 	switch( type )
 	{
-		case MapListZoned:
-		{
-			delete g_hDatabase;
-			SQL_SetPrefix();
-			
-			char buffer[512];
-			g_hDatabase = SQL_Connect( "shavit", true, buffer, sizeof(buffer) );
-
-			Format( buffer, sizeof(buffer), "SELECT `map` FROM `%smapzones` WHERE `type` = 1 AND `track` = 0 ORDER BY `map`", g_cSQLPrefix );
-			g_hDatabase.Query( LoadZonedMapsCallback, buffer, _, DBPrio_High );
-		}
 		case MapListFolder:
 		{
 			LoadFromMapsFolder( g_aMapList );
@@ -753,76 +718,11 @@ void LoadMapList()
 			ReadMapList( g_aMapList, _, "default" );
 			CreateNominateMenu();
 		}
-		case MapListMixed:
-		{
-			delete g_hDatabase;
-			SQL_SetPrefix();
-
-			ReadMapList( g_aAllMapsList, _, "default" );
-
-			char buffer[512];
-			g_hDatabase = SQL_Connect( "shavit", true, buffer, sizeof(buffer) );
-			Format( buffer, sizeof(buffer), "SELECT `map` FROM `%smapzones` WHERE `type` = 1 AND `track` = 0 ORDER BY `map`", g_cSQLPrefix );
-			g_hDatabase.Query( LoadZonedMapsCallbackMixed, buffer, _, DBPrio_High );
-		}
 	}
 
 	
 }
 
-public void LoadZonedMapsCallback( Database db, DBResultSet results, const char[] error, any data )
-{
-	if( results == null )
-	{
-		LogError( "[SMC] - (LoadMapZonesCallback) - %s", error );
-		return;	
-	}
-
-	char map[PLATFORM_MAX_PATH];
-	char map2[PLATFORM_MAX_PATH];
-	while( results.FetchRow() )
-	{	
-		results.FetchString( 0, map, sizeof(map) );
-		
-		
-		if( ( FindMap( map, map2, sizeof(map2) ) == FindMap_Found ) || ( FindMap( map, map2, sizeof(map2) ) == FindMap_FuzzyMatch ) )
-		{						  
-			g_aMapList.PushString( map2 );
-		}
-	}
-	
-	CreateNominateMenu();
-}
-
-public void LoadZonedMapsCallbackMixed( Database db, DBResultSet results, const char[] error, any data )
-{
-	if( results == null )
-	{
-		LogError( "[SMC] - (LoadMapZonesCallbackMixed) - %s", error );
-		return;	
-	}
-
-	char map[PLATFORM_MAX_PATH];
-	char map2[PLATFORM_MAX_PATH];
-	char buffer[PLATFORM_MAX_PATH];
-	while( results.FetchRow() )
-	{	
-		results.FetchString( 0, map, sizeof(map) );//db mapname
-		
-		for (int i = 0; i < g_aAllMapsList.Length; ++i)
-		{
-			g_aAllMapsList.GetString(i, buffer, sizeof(buffer));//maplistmapname
-			GetMapDisplayName(buffer, map2, sizeof(map2));//get's the displayname of the map
-
-			if ( StrEqual(map, map2, false) )
-			{	
-				g_aMapList.PushString( buffer ); 
-			}
-		}
-	}
-	
-	CreateNominateMenu();
-}
 
 bool SMC_FindMap( const char[] mapname, char[] output, int maxlen )
 {
@@ -1004,11 +904,6 @@ void CreateNominateMenu()
 		
 		char mapdisplay[PLATFORM_MAX_PATH + 32];
 		GetMapDisplayName(mapname, mapdisplay, sizeof(mapdisplay));
-
-
-		int tier = Shavit_GetMapTier( mapdisplay );
-
-		Format( mapdisplay, sizeof(mapdisplay), "%s (Tier %i)", mapdisplay, tier );
 		
 		g_hNominateMenu.AddItem( mapname, mapdisplay, style );
 	}
@@ -1066,10 +961,6 @@ public Action Command_RockTheVote( int client, int args )
 	{
 		int needed = GetRTVVotesNeeded();
 		ReplyToCommand( client, "[SMC] You have already RTVed, if you want to un-RTV use the command sm_unrtv (%i more %s needed)", needed, (needed == 1) ? "vote" : "votes" );
-	}
-	else if( g_cvRTVMinimumPoints.IntValue != -1 && Shavit_GetPoints( client ) <= g_cvRTVMinimumPoints.FloatValue )
-	{
-		ReplyToCommand( client, "[SMC] You must be a higher rank to RTV!" );
 	}
 	else if( GetClientTeam( client ) == CS_TEAM_SPECTATOR && !g_cvRTVAllowSpectators.BoolValue )
 	{
@@ -1193,28 +1084,6 @@ void UnRTVClient( int client )
 }
 
 /* Stocks */
-stock void SQL_SetPrefix()
-{
-	char sFile[PLATFORM_MAX_PATH];
-	BuildPath( Path_SM, sFile, sizeof(sFile), "configs/shavit-prefix.txt" );
-
-	File fFile = OpenFile( sFile, "r" );
-	if( fFile == null )
-	{
-		SetFailState("Cannot open \"configs/shavit-prefix.txt\". Make sure this file exists and that the server has read permissions to it.");
-	}
-
-	char sLine[PLATFORM_MAX_PATH*2];
-	while( fFile.ReadLine( sLine, sizeof(sLine) ) )
-	{
-		TrimString( sLine );
-		strcopy( g_cSQLPrefix, sizeof(g_cSQLPrefix), sLine );
-
-		break;
-	}
-
-	delete fFile;	
-}
 
 stock void RemoveString( ArrayList array, const char[] target )
 {
@@ -1276,10 +1145,6 @@ stock int GetRTVVotesNeeded()
 				continue;
 			}
 			
-			if( g_cvRTVMinimumPoints.IntValue != -1 && Shavit_GetPoints( i ) <= g_cvRTVMinimumPoints.FloatValue )
-			{
-				continue;
-			}
 		
 			total++;
 			if( g_bRockTheVote[i] )
@@ -1313,10 +1178,6 @@ stock int GetRTVCount()
 				continue;
 			}
 			
-			if( g_cvRTVMinimumPoints.IntValue != -1 && Shavit_GetPoints( i ) <= g_cvRTVMinimumPoints.FloatValue )
-			{
-				continue;
-			}
 			
 			if( g_bRockTheVote[i] )
 			{
@@ -1337,11 +1198,6 @@ stock int GetRTVTotalNeeded()
 		{
 			// dont count players that can't vote
 			if( !g_cvRTVAllowSpectators.BoolValue && IsClientObserver( i ) )
-			{
-				continue;
-			}
-			
-			if( g_cvRTVMinimumPoints.IntValue != -1 && Shavit_GetPoints( i ) <= g_cvRTVMinimumPoints.FloatValue )
 			{
 				continue;
 			}
