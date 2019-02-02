@@ -25,7 +25,7 @@ A SourceMod mapchooser plugin designed for use with shavits timer
 
 ### Admin Commands
 
- - sm_extend (ADMFLAG_CHANGEMAP) - Admin command for force extending map
+ - sm_extendmap (ADMFLAG_RCON) - Admin command for force extending map
  - sm_forcemapvote (ADMFLAG_RCON) - Admin command for forcing the end of map vote
  - sm_reloadmaplist (ADMFLAG_CHANGEMAP) - Admin command for forcing maplist to be reloaded
 
@@ -35,7 +35,7 @@ A SourceMod mapchooser plugin designed for use with shavits timer
  - sm_unnominate - Removes nominations
  - sm_rtv - Lets players Rock The Vote
  - sm_unrtv - Lets players un-Rock The Vote
-
+ - sm_nomlist - Shows currently nominated maps
  
 ## Available Forwards
 
