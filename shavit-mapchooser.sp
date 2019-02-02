@@ -8,10 +8,9 @@
 // for MapChange type
 #include <mapchooser>
 
-#define PLUGIN_VERSION "1.0.4.6"
+#define PLUGIN_VERSION "1.0.4.7"
 
 
-bool g_bLate;
 
 #if defined DEBUG
 bool g_bDebug;
@@ -66,7 +65,7 @@ Handle g_hForward_OnRTV = null;
 Handle g_hForward_OnUnRTV = null;
 Handle g_hForward_OnSuccesfulRTV = null;
 
-enum MapListType
+enum
 {
 	MapListFile = 1,
 	MapListFolder = 2,
@@ -83,13 +82,9 @@ public Plugin myinfo =
 
 public APLRes AskPluginLoad2( Handle myself, bool late, char[] error, int err_max )
 {
-	g_bLate = late;
-
-
 	g_hForward_OnRTV = CreateGlobalForward( "SMC_OnRTV", ET_Event, Param_Cell );
 	g_hForward_OnUnRTV = CreateGlobalForward( "SMC_OnUnRTV", ET_Event, Param_Cell );
 	g_hForward_OnSuccesfulRTV = CreateGlobalForward( "SMC_OnSuccesfulRTV", ET_Event );
-
 
 	return APLRes_Success;
 }
@@ -136,12 +131,7 @@ public void OnPluginStart()
 	RegConsoleCmd( "sm_rtv", Command_RockTheVote, "Lets players Rock The Vote" );
 	RegConsoleCmd( "sm_unrtv", Command_UnRockTheVote, "Lets players un-Rock The Vote" );
 	RegConsoleCmd( "sm_nomlist", Command_NomList, "Shows currently nominated last" );
-	
-	if( g_bLate )
-	{
-		OnMapStart();
-		OnConfigsExecuted();
-	}
+
 	
 	#if defined DEBUG
 	RegConsoleCmd( "sm_smcdebug", Command_Debug );
@@ -681,9 +671,7 @@ void LoadMapList()
 	g_aMapList.Clear();
 	g_aAllMapsList.Clear();
 	
-
-	MapListType type = view_as<MapListType>( g_cvMapListType.IntValue );
-	switch( type )
+	switch( g_cvMapListType.IntValue )
 	{
 		case MapListFolder:
 		{
