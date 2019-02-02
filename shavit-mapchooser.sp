@@ -130,7 +130,7 @@ public void OnPluginStart()
 	RegConsoleCmd( "sm_unnominate", Command_UnNominate, "Removes nominations" );
 	RegConsoleCmd( "sm_rtv", Command_RockTheVote, "Lets players Rock The Vote" );
 	RegConsoleCmd( "sm_unrtv", Command_UnRockTheVote, "Lets players un-Rock The Vote" );
-	RegConsoleCmd( "sm_nomlist", Command_NomList, "Shows currently nominated last" );
+	RegConsoleCmd( "sm_nomlist", Command_NomList, "Shows currently nominated maps" );
 
 	
 	#if defined DEBUG
