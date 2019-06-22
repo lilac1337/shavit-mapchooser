@@ -27,6 +27,7 @@ ConVar g_cvRTVMinimumPoints;
 ConVar g_cvRTVDelayTime;
 
 ConVar g_cvMapListType;
+ConVar g_cvMatchFuzzyMap;
 
 ConVar g_cvMapVoteStartTime;
 ConVar g_cvMapVoteDuration;
@@ -110,6 +111,7 @@ public void OnPluginStart()
 	g_aOldMaps = new ArrayList( ByteCountToCells( PLATFORM_MAX_PATH ) );
 	
 	g_cvMapListType = CreateConVar( "smc_maplist_type", "1", "Where the plugin should get the map list from. 0 = zoned maps from database, 1 = from maplist file ( mapcycle.txt ), 2 = from maps folder, 3 = from zoned maps and confirmed by maplist file", _, true, 0.0, true, 3.0 );
+	g_cvMatchFuzzyMap = CreateConVar( "smc_match_fuzzy", "1", "If set to 1, the plugin will accept partial map matches from the database. Useful for workshop maps, bad for duplicate map names", _, true, 0.0, true, 1.0 );
 	
 	g_cvMapVoteBlockMapInterval = CreateConVar( "smc_mapvote_blockmap_interval", "1", "How many maps should be played before a map can be nominated again", _, true, 0.0, false );
 	g_cvMapVoteEnableNoVote = CreateConVar( "smc_mapvote_enable_novote", "1", "Whether players are able to choose 'No Vote' in map vote", _, true, 0.0, true, 1.0 );
@@ -757,7 +759,7 @@ public void LoadZonedMapsCallback( Database db, DBResultSet results, const char[
 		results.FetchString( 0, map, sizeof( map ) );
 		
 		
-		if( ( FindMap( map, map2, sizeof( map2 ) ) == FindMap_Found ) || ( FindMap( map, map2, sizeof( map2 ) ) == FindMap_FuzzyMatch ) )
+		if( ( FindMap( map, map2, sizeof( map2 ) ) == FindMap_Found ) || ( g_cvMatchFuzzyMap.BoolValue && FindMap( map, map2, sizeof( map2 ) ) == FindMap_FuzzyMatch ) )
 		{						  
 			g_aMapList.PushString( map2 );
 		}

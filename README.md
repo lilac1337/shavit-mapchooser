@@ -4,6 +4,7 @@ A SourceMod mapchooser plugin designed for use with shavits timer
 ## Available ConVars
 
  - smc_maplist_type (Default = 0, Min = 0, Max = 3) - Where the plugin should get the map list from. 0 = zoned maps from database, 1 = from maplist file (maplist.txt), 2 = from maps folder, 3 = from zoned maps and confirmed by maplist file
+ - smc_match_fuzzy (Default = 0, Min = 0, Max = 1) - If set to 1, the plugin will accept partial map matches from the database. Useful for workshop maps, bad for duplicate map names
  
  - smc_mapvote_blockmap_interval (Default = 1, Min = 0) - How many maps should be played before a map can be nominated again
  - smc_mapvote_enable_novote (Default = 1, Min = 0, Max = 1) - Whether players are able to choose 'No Vote' in map vote
