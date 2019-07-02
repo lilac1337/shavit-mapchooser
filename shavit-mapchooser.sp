@@ -76,10 +76,13 @@ Menu g_hVoteMenu;
 bool g_bRockTheVote[MAXPLAYERS + 1];
 char g_cNominatedMap[MAXPLAYERS + 1][PLATFORM_MAX_PATH];
 int g_iNominateCount;
+bool g_bStay[MAXPLAYERS + 1];
 
 Handle g_hRetryTimer = null;
 Handle g_hForward_OnRTV = null;
 Handle g_hForward_OnUnRTV = null;
+Handle g_hForward_OnStay = null;
+Handle g_hForward_OnLeave = null;
 Handle g_hForward_OnSuccesfulRTV = null;
 Handle g_hForward_OnTeamNameChange = null;
 
@@ -106,6 +109,8 @@ public APLRes AskPluginLoad2( Handle myself, bool late, char[] error, int err_ma
 {
 	g_hForward_OnRTV = CreateGlobalForward( "SMC_OnRTV", ET_Event, Param_Cell );
 	g_hForward_OnUnRTV = CreateGlobalForward( "SMC_OnUnRTV", ET_Event, Param_Cell );
+	g_hForward_OnStay = CreateGlobalForward( "SMC_OnStay", ET_Event, Param_Cell );
+	g_hForward_OnLeave = CreateGlobalForward( "SMC_Leave", ET_Event, Param_Cell );
 	g_hForward_OnSuccesfulRTV = CreateGlobalForward( "SMC_OnSuccesfulRTV", ET_Event );
 	g_hForward_OnTeamNameChange = CreateGlobalForward( "SMC_OnTeamNameChange", ET_Event, Param_String, Param_String );
 
@@ -161,6 +166,9 @@ public void OnPluginStart()
 	RegConsoleCmd( "sm_rtv", Command_RockTheVote, "Lets players Rock The Vote" );
 	RegConsoleCmd( "sm_unrtv", Command_UnRockTheVote, "Lets players un-Rock The Vote" );
 	RegConsoleCmd( "sm_smap", Command_SMap, "Force changes the map" );
+	RegConsoleCmd( "sm_stay", Command_Stay, "Let's the players stay on the map" );
+	RegConsoleCmd( "sm_leave", Command_Leave, "Let's the players leave on map" );
+	RegConsoleCmd( "sm_unstay", Command_Leave, "Let's the players leave on map" );
 	
 	sm_nextmap = FindConVar( "sm_nextmap" );
 	//mp_maxrounds = FindConVar( "mp_maxrounds" );
@@ -197,7 +205,13 @@ public void OnMapStart()
 	{
 		g_cNominatedMap[i][0] = 0;
 	}
+
 	ClearRTV();
+	
+	for( int i = 1; i <= MaxClients; ++i )
+	{
+		g_bStay[i] = false;
+	}
 	
 	CreateTimer( 2.0, Timer_OnMapTimeLeftChanged, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE );
 }
@@ -224,6 +238,11 @@ public void Event_MatchEnd( Event event, const char[] name, bool dontBroadcast )
 	
 
 	ClearRTV();
+
+	for( int i = 1; i <= MaxClients; ++i )
+	{
+		g_bStay[i] = false;
+	}
 
 	DebugPrint( "#### Debug Print: Event_MatchEnd" );
 
@@ -438,6 +457,7 @@ public void OnClientDisconnect( int client )
 {
 	// clear player data
 	g_bRockTheVote[client] = false;
+	g_bStay[client] = false;
 	if(g_cNominatedMap[client][0] != 0)
 	{
 		--g_iNominateCount;
@@ -696,6 +716,11 @@ public void Handler_VoteFinishedGeneric( Menu menu, int num_votes, int num_clien
 		g_fLastMapvoteTime = GetGameTime();
 		
 		ClearRTV();
+
+		for( int i = 1; i <= MaxClients; ++i )
+		{
+			g_bStay[i] = false;
+		}
 	}
 	else if( StrEqual( map, "dontchange" ) )
 	{
@@ -707,6 +732,11 @@ public void Handler_VoteFinishedGeneric( Menu menu, int num_votes, int num_clien
 		g_fLastMapvoteTime = GetGameTime();
 		
 		ClearRTV();
+
+		for( int i = 1; i <= MaxClients; ++i )
+		{
+			g_bStay[i] = false;
+		}
 	}
 	else
 	{
@@ -731,6 +761,11 @@ public void Handler_VoteFinishedGeneric( Menu menu, int num_votes, int num_clien
 			ChangeMapDelayed( map );
 
 			ClearRTV();
+
+			for( int i = 1; i <= MaxClients; ++i )
+			{
+				g_bStay[i] = false;
+			}
 		}
 		
 		g_bMapVoteStarted = false;
@@ -1241,8 +1276,14 @@ public Action Command_RockTheVote( int client, int args )
 		{
 			total = 1;
 		}
+
+		CheckRTV();
+
 		int needed = total - GetRTVCount();
-		ReplyToCommand( client, "[SMC] You have already RTVed, if you want to un-RTV use the command sm_unrtv ( %i more %s needed )", needed, ( needed == 1 ) ? "vote" : "votes" );
+		if( needed != 0 )
+		{
+			ReplyToCommand( client, "[SMC] You have already RTVed, if you want to un-RTV use the command sm_unrtv ( %i more %s needed )", needed, ( needed == 1 ) ? "vote" : "votes" );
+		}
 	}
 	else if( g_cvRTVMinimumPoints.IntValue != -1 && Shavit_GetPoints( client ) <= g_cvRTVMinimumPoints.FloatValue )
 	{
@@ -1254,6 +1295,7 @@ public Action Command_RockTheVote( int client, int args )
 	}
 	else
 	{
+		LeaveClient( client );
 		RTVClient( client );
 		CheckRTV( client );
 	}
@@ -1342,6 +1384,52 @@ public Action Command_UnRockTheVote( int client, int args )
 	return Plugin_Handled;
 }
 
+public Action Command_Stay( int client, int args )
+{
+	if( g_bStay[client] )
+	{
+		ReplyToCommand( client, "[SMC] You have already voted to stay on the current map" );
+	}
+	else
+	{
+		StayClient( client );
+		UnRTVClient( client );
+		
+		if( g_bMapVoteStarted )
+		{
+			int total = RoundToFloor( GetPlayerCount( g_cvRTVAllowSpectators.BoolValue) * ( g_cvRTVRequiredPercentage.FloatValue / 100 ) );
+			if( total == 0 )
+			{
+				total = 1;
+			}
+			int needed = total - GetRTVCount();
+			if( needed > 0 )
+			{
+				CancelVote();
+				g_bMapVoteStarted = false;
+			}
+		}
+		ReplyToCommand( client, "[SMC] You have voted to stay on the current map" );
+	}
+	
+	return Plugin_Handled;
+}
+
+public Action Command_Leave( int client, int args )
+{
+	if( g_bStay[client] )
+	{
+		LeaveClient( client );
+		ReplyToCommand( client, "[SMC] You have removed your vote to stay on the current map" );
+	}
+	else
+	{
+		ReplyToCommand( client, "[SMC] You haven't voted to stay on the current map yet" );
+	}
+	
+	return Plugin_Handled;
+}
+
 #if defined DEBUG
 public Action Command_Debug( int client, int args )
 {
@@ -1364,6 +1452,22 @@ void UnRTVClient( int client )
 {
 	g_bRockTheVote[client] = false;
 	Call_StartForward( g_hForward_OnUnRTV );
+	Call_PushCell( client );
+	Call_Finish();
+}
+
+void StayClient( int client )
+{
+	g_bStay[client] = true;
+	Call_StartForward( g_hForward_OnStay );
+	Call_PushCell( client );
+	Call_Finish();
+}
+
+void LeaveClient( int client )
+{
+	g_bStay[client] = false;
+	Call_StartForward( g_hForward_OnLeave );
 	Call_PushCell( client );
 	Call_Finish();
 }
@@ -1485,7 +1589,16 @@ stock int GetRTVCount()
 			{
 				++rtvcount;
 			}
+			else if( g_bStay[i] )
+			{
+				--rtvcount;
+			}
 		}
+	}
+
+	if( rtvcount < 0 )
+	{
+		rtvcount = 0;
 	}
 	
 	return rtvcount;

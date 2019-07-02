@@ -20,6 +20,22 @@ forward void SMC_OnRTV(int client);
 forward void SMC_OnUnRTV(int client);
 
 /**
+ * Called when a player uses !stay.
+ *
+ * @param client					Client index.
+ * @noreturn
+ */
+forward void SMC_OnStay(int client);
+
+/**
+ * Called when a player uses !leave.
+ *
+ * @param client					Client index.
+ * @noreturn
+ */
+forward void SMC_OnLeave(int client);
+
+/**
  * Called when the map changes from an RTV.
  *
  * @noreturn
@@ -27,7 +43,7 @@ forward void SMC_OnUnRTV(int client);
 forward void SMC_OnSuccesfulRTV();
 
 /**
- * Called when the map changes from an RTV.
+ * Called when the scoreboards are updated with their new values.
  * @param teamname1					Value that mp_teamname1 will be set to.
  * @param teamname2					Value that mp_teamname2 will be set to.
  * @noreturn
@@ -46,11 +62,18 @@ native void SMC_GetNextMap(char[] mapName, int mapLength, char[] id = "", int id
 
 public SharedPlugin __pl_smc =
 {
-	name = "Workshop - MapChooser",
-	file = "workshop-mapchooser.smx",
+	name = "shavit - MapChooser",
+	file = "shavit_mapchooser.smx",
 	#if defined REQUIRE_PLUGIN
-	required = 0,
+	required = 1,
 	#else
 	required = 0,
 	#endif
 };
+
+#if !defined REQUIRE_PLUGIN
+public void __pl_smc_SetNTVOptional()
+{
+	MarkNativeAsOptional("SMC_GetNextMap");
+}
+#endif

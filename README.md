@@ -1,10 +1,9 @@
 # shavit-mapchooser
-A SourceMod mapchooser plugin designed for use with shavits timer
+A SourceMod mapchooser plugin designed for use with shavits timer for Syndicate Gamers bhop server.
 
 ## Available ConVars
 
- - smc_maplist_type (Default = 0, Min = 0, Max = 3) - Where the plugin should get the map list from. 0 = zoned maps from database, 1 = from maplist file (maplist.txt), 2 = from maps folder, 3 = from zoned maps and confirmed by maplist file
- - smc_match_fuzzy (Default = 0, Min = 0, Max = 1) - If set to 1, the plugin will accept partial map matches from the database. Useful for workshop maps, bad for duplicate map names
+ - smc_maplist_type (Default = 0, Min = 0, Max = 4) - Where the plugin should get the map list from. 0 = zoned maps from database, 1 = from maplist file (maplist.txt), 2 = from maps folder, 3 = from zoned maps and confirmed by maplist file
  
  - smc_mapvote_blockmap_interval (Default = 1, Min = 0) - How many maps should be played before a map can be nominated again
  - smc_mapvote_enable_novote (Default = 1, Min = 0, Max = 1) - Whether players are able to choose 'No Vote' in map vote
@@ -36,10 +35,15 @@ A SourceMod mapchooser plugin designed for use with shavits timer
  - sm_unnominate - Removes nominations
  - sm_rtv - Lets players Rock The Vote
  - sm_unrtv - Lets players un-Rock The Vote
- - sm_nomlist - Shows currently nominated maps
+ - sm_stay - Let's the players stay on the map
+ - sm_leave - Let's the players leave the map
+ - sm_unstay - Let's the players leave the map
  
 ## Available Forwards
 
  - SMC_OnSuccesfulRTV - Called when the map changes from an RTV.
  - SMC_OnRTV - Called when a client uses !rtv.
  - SMC_OnUnRTV - Called when a client uses !unrtv.
+ - SMC_OnTeamNameChange - Called when the scoreboards are updated with their new values.
+ - SMC_OnStay - Called when a player uses !stay.
+ - SMC_OnLeave - Called when a player uses !leave.
