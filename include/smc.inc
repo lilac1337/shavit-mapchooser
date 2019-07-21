@@ -60,6 +60,22 @@ forward Action SMC_OnTeamNameChange(char teamName1[64], char teamName2[64]);
  */
 native void SMC_GetNextMap(char[] mapName, int mapLength, char[] id = "", int idLength = 0);
 
+/**
+ * Native used to set the nextmap set by the mapchooser
+ * @param mapName					Desired map, should be the maps display name or partial name.
+ * @param mapLength					Maximum Length of the mapName buffer
+ * @return 							true if the nextmap was set.
+ */
+native bool SMC_SetNextMap(const char[] mapName, int mapLength);
+
+/**
+ * Native used to change the map with the mapchooser system.
+ * @param mapName					Desired map, should be the maps display name or partial name.
+ * @param mapLength					Maximum Length of the mapName buffer
+ * @return 							true if no errors were found.
+ */
+native bool SMC_ChangeMap(const char[] mapName, int mapLength, int delay = 2.0);
+
 public SharedPlugin __pl_smc =
 {
 	name = "shavit - MapChooser",
