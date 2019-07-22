@@ -1671,7 +1671,7 @@ public any Native_SetNextMap(Handle plugin, int numParams)
 	return true;
 }
 
-// native bool SMC_ChangeMap(const char[] mapName, int mapLength, int delay = 2.0);
+// native bool SMC_ChangeMap(const char[] mapName, int mapLength, float delay = 2.0);
 public any Native_ChangeMap(Handle plugin, int numParams)
 {
 	char buffer[PLATFORM_MAX_PATH];

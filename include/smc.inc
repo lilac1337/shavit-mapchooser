@@ -72,9 +72,10 @@ native bool SMC_SetNextMap(const char[] mapName, int mapLength);
  * Native used to change the map with the mapchooser system.
  * @param mapName					Desired map, should be the maps display name or partial name.
  * @param mapLength					Maximum Length of the mapName buffer
+ * @param delay						Delay in seconds for the map change to actually happen.
  * @return 							true if no errors were found.
  */
-native bool SMC_ChangeMap(const char[] mapName, int mapLength, int delay = 2.0);
+native bool SMC_ChangeMap(const char[] mapName, int mapLength, float delay = 2.0);
 
 public SharedPlugin __pl_smc =
 {
