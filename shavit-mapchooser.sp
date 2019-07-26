@@ -27,9 +27,6 @@ ConVar g_cvRTVAllowSpectators;
 ConVar g_cvRTVMinimumPoints;
 ConVar g_cvRTVDelayTime;
 
-
-ConVar g_cvMapListType;
-
 ConVar g_cvMapVoteStartTime;
 ConVar g_cvMapVoteDuration;
 ConVar g_cvMapVoteBlockMapInterval;
@@ -58,6 +55,8 @@ StringMap g_smMapList;
 char g_cMapName[PLATFORM_MAX_PATH];
 char g_cNextMap[PLATFORM_MAX_PATH];
 
+int g_iCurrentMapID;
+
 MapChange g_ChangeTime;
 
 bool g_bMapVoteStarted;
@@ -85,15 +84,6 @@ Handle g_hForward_OnLeave = null;
 Handle g_hForward_OnSuccesfulRTV = null;
 Handle g_hForward_OnTeamNameChange = null;
 
-
-enum MapListType
-{
-	MapListZoned,
-	MapListFile,
-	MapListFolder,
-	MapListMixed,
-	MapListDB
-}
 
 public Plugin myinfo =
 {
@@ -133,11 +123,9 @@ public void OnPluginStart()
 	LoadTranslations( "basetriggers.phrases" );
 
 	g_aMapList = new ArrayList( ByteCountToCells( PLATFORM_MAX_PATH ) );
-	g_aOldMaps = new ArrayList( ByteCountToCells( PLATFORM_MAX_PATH ) );
+	g_aOldMaps = new ArrayList();
 
 	g_smMapList = new StringMap();
-
-	g_cvMapListType = CreateConVar( "smc_maplist_type", "0", "Where the plugin should get the map list from. 0 = zoned maps from database, 1 = from maplist file ( mapcycle.txt ), 2 = from maps folder, 3 = from zoned maps and confirmed by maplist file, 4 = from db_mapcycle", _, true, 0.0, true, 4.0 );
 
 	g_cvMapVoteBlockMapInterval = CreateConVar( "smc_mapvote_blockmap_interval", "1", "How many maps should be played before a map can be nominated again", _, true, 0.0, false );
 	g_cvMapVoteEnableNoVote = CreateConVar( "smc_mapvote_enable_novote", "1", "Whether players are able to choose 'No Vote' in map vote", _, true, 0.0, true, 1.0 );
@@ -167,10 +155,12 @@ public void OnPluginStart()
 	RegConsoleCmd( "sm_unnominate", Command_UnNominate, "Removes nominations" );
 	RegConsoleCmd( "sm_rtv", Command_RockTheVote, "Lets players Rock The Vote" );
 	RegConsoleCmd( "sm_unrtv", Command_UnRockTheVote, "Lets players un-Rock The Vote" );
-	RegConsoleCmd( "sm_smap", Command_SMap, "Force changes the map" );
 	RegConsoleCmd( "sm_stay", Command_Stay, "Let's the players stay on the map" );
 	RegConsoleCmd( "sm_leave", Command_Leave, "Let's the players leave on map" );
 	RegConsoleCmd( "sm_unstay", Command_Leave, "Let's the players leave on map" );
+
+	AddCommandListener( Command_SMap, "sm_smap" );
+	AddCommandListener( Command_SMap, "sm_map" );
 
 	sm_nextmap = FindConVar( "sm_nextmap" );
 	//mp_maxrounds = FindConVar( "mp_maxrounds" );
@@ -190,9 +180,15 @@ public void OnMapEnd()
 
 public void OnMapStart()
 {
-	GetMapName( g_cMapName, sizeof( g_cMapName ), true );
-
 	DebugPrint( "#### Debug Print: OnMapStart" );
+
+	char mapsplit[2][PLATFORM_MAX_PATH];
+	GetCurrentMap( g_cMapName, PLATFORM_MAX_PATH );
+	ReplaceString( g_cMapName, PLATFORM_MAX_PATH, "workshop/", "", false) ;
+	ExplodeString( g_cMapName, "/", mapsplit, 2, 64 );
+
+	g_iCurrentMapID = StringToInt( mapsplit[0] );
+	g_cMapName = mapsplit[1];
 
 	g_fMapStartTime = GetGameTime();
 	g_fLastMapvoteTime = 0.0;
@@ -220,9 +216,19 @@ public void OnMapStart()
 
 public void Event_MatchEnd( Event event, const char[] name, bool dontBroadcast )
 {
+	static int s_LastAttemptTime = 0;
+
+	if( GetTime() - s_LastAttemptTime < 10 )
+	{
+		return;
+	}
+
+	s_LastAttemptTime = GetTime();
+
+
 	if( g_cvMapVoteBlockMapInterval.IntValue > 0 )
 	{
-		g_aOldMaps.PushString( g_cMapName );
+		g_aOldMaps.Push( g_iCurrentMapID );
 		if( g_aOldMaps.Length > g_cvMapVoteBlockMapInterval.IntValue )
 		{
 			g_aOldMaps.Erase( 0 );
@@ -238,13 +244,13 @@ public void Event_MatchEnd( Event event, const char[] name, bool dontBroadcast )
 		g_cNominatedMap[i][0] = 0;
 	}
 
-
-	ClearRTV();
-
 	for( int i = 1; i <= MaxClients; ++i )
 	{
 		g_bStay[i] = false;
 	}
+
+
+	ClearRTV();
 
 	DebugPrint( "#### Debug Print: Event_MatchEnd" );
 
@@ -385,7 +391,7 @@ Action PrepareScoreBoard(int timeleft)
 	FormatSeconds( time, stimeleft, sizeof( stimeleft ), false );
 	if(g_bLastRound)
 	{
-		FormatEx( teamname1, sizeof( teamname1 ), "Timeleft:\nFinal Round" );
+		teamname1 = "Timeleft:\nFinal Round";
 	}
 	else
 	{
@@ -393,7 +399,7 @@ Action PrepareScoreBoard(int timeleft)
 	}
 	if( !IsCharNumeric( g_cNextMap[0] ) && !IsCharAlpha( g_cNextMap[0] ) )
 	{
-		FormatEx( teamname2, sizeof( teamname2 ), "Next Map:\nPending Vote" );
+		teamname2 = "Next Map:\nPending Vote";
 	}
 	else
 	{
@@ -501,7 +507,7 @@ public void OnClientSayCommand_Post( int client, const char[] command, const cha
 			}
 			else
 			{
-				PrintToChatAll( "[SMC] %t [%i]", "Next Map", g_cNextMap, Shavit_GetMapTier( g_cNextMap ) );
+				PrintToChatAll( "[SMC] %t [T%i]", "Next Map", g_cNextMap, Shavit_GetMapTier( g_cNextMap ) );
 			}
 		}
 	}
@@ -575,7 +581,8 @@ void InitiateMapVote( MapChange when )
 	{
 		int rand = GetRandomInt( 0, g_aMapList.Length - 1 );
 		g_aMapList.GetString( rand, map, sizeof( map ) );
-
+		int id = -1;
+		g_smMapList.GetValue( map, id );
 
 		if( StrEqual( map, g_cMapName ) )
 		{
@@ -584,7 +591,7 @@ void InitiateMapVote( MapChange when )
 			continue;
 		}
 
-		int idx = g_aOldMaps.FindString( map );
+		int idx = g_aOldMaps.FindValue( id );
 		if( idx != -1 )
 		{
 			// map already played recently, get another map
@@ -691,7 +698,7 @@ public void Handler_VoteFinishedGeneric( Menu menu, int num_votes, int num_clien
 	menu.GetItem( item_info[0][VOTEINFO_ITEM_INDEX], map, sizeof( map ), _, displayName, sizeof( displayName ) );
 
 	char debug2[256];
-	Format( debug2, sizeof( debug2 ), "Handler_VoteFinishedGeneric, item_info 0: %s", displayName );
+	FormatEx( debug2, sizeof( debug2 ), "Handler_VoteFinishedGeneric, item_info 0: %s", displayName );
 	DebugPrint( debug2 );
 
 	PrintToChatAll( "#1 vote was %s ( %s )", map, ( g_ChangeTime == MapChange_Instant ) ? "instant" : "map end" );
@@ -801,12 +808,12 @@ public int Handler_MapVoteMenu( Menu menu, MenuAction action, int param1, int pa
 				menu.GetItem( param2, map, sizeof( map ) );
 				if ( strcmp( map, "extend", false ) == 0 )
 				{
-					Format( buffer, sizeof( buffer ), "Extend Map" );
+					buffer = "Extend Map";
 					return RedrawMenuItem( buffer );
 				}
 				else if ( strcmp( map, "novote", false ) == 0 )
 				{
-					Format( buffer, sizeof( buffer ), "No Vote" );
+					buffer =  "No Vote";
 					return RedrawMenuItem( buffer );
 				}
 			}
@@ -821,7 +828,7 @@ public int Handler_MapVoteMenu( Menu menu, MenuAction action, int param1, int pa
 				char map[PLATFORM_MAX_PATH];
 				menu.GetItem( 0, map, sizeof( map ) );
 				char debug1[256];
-				Format( debug1, sizeof( debug1 ), "VoteCancel_NoVotes, item 0: %s", map );
+				FormatEx( debug1, sizeof( debug1 ), "VoteCancel_NoVotes, item 0: %s", map );
 				DebugPrint( debug1 );
 
 				// Make sure the first map in the menu isn't one of the special items.
@@ -875,71 +882,7 @@ void ExtendMap( int time = 0 )
 
 void LoadMapList()
 {
-	g_aMapList.Clear();
-
-
-	MapListType type = view_as<MapListType>( g_cvMapListType.IntValue );
-	switch( type )
-	{
-		case MapListZoned:
-		{
-			delete g_hDatabase;
-			SQL_SetPrefix();
-
-			char buffer[512];
-			g_hDatabase = SQL_Connect( "shavit", true, buffer, sizeof( buffer ) );
-
-			Format( buffer, sizeof( buffer ), "SELECT map FROM `%smapzones` WHERE type = 1 AND track = 0 ORDER BY `map`", g_cSQLPrefix );
-			g_hDatabase.Query( LoadZonedMapsCallback, buffer, _, DBPrio_High );
-		}
-		case MapListFolder:
-		{
-			LoadFromMapsFolder( g_aMapList );
-			CreateNominateMenu();
-		}
-		case MapListFile:
-		{
-			ReadMapList( g_aMapList, _, "default" );
-			CreateNominateMenu();
-		}
-		case MapListDB:
-		{
-			delete g_hDatabase;
-
-			char buffer[512];
-			char error[512];
-
-			g_hDatabase = SQLite_UseDatabase( "db_mapcycle", error, sizeof( error ) );
-
-			Format( buffer, sizeof( buffer ), "SELECT WorkshopID, Map FROM db_maplist ORDER BY Map ASC" );
-			g_hDatabase.Query( LoadMapListCallback, buffer, _, DBPrio_High );
-		}
-
-	}
-}
-
-public void LoadZonedMapsCallback( Database db, DBResultSet results, const char[] error, any data )
-{
-	if( results == null )
-	{
-		LogError( "[SMC] - ( LoadMapZonesCallback ) - %s", error );
-		return;
-	}
-
-	char map[PLATFORM_MAX_PATH];
-	char map2[PLATFORM_MAX_PATH];
-	while( results.FetchRow() )
-	{
-		results.FetchString( 0, map, sizeof( map ) );
-
-
-		if( ( FindMap( map, map2, sizeof( map2 ) ) == FindMap_Found ) || ( FindMap( map, map2, sizeof( map2 ) ) == FindMap_FuzzyMatch ) )
-		{
-			g_aMapList.PushString( map );
-		}
-	}
-
-	CreateNominateMenu();
+	g_hDatabase.Query( LoadMapListCallback, "SELECT WorkshopID, Map FROM db_maplist", _, DBPrio_High );
 }
 
 public void LoadMapListCallback( Database db, DBResultSet results, const char[] error, any data )
@@ -949,19 +892,32 @@ public void LoadMapListCallback( Database db, DBResultSet results, const char[] 
 		LogError( "[SMC] - ( LoadMapListCallback ) - %s", error );
 		return;
 	}
+	static int s_LastAttemptTime = 0;
+	if((GetTime() - s_LastAttemptTime) < 5)
+	{
+		LogMessage("LoadMapListCallback Fired multiple times");
+		return;
+	}
 
-	char id[PLATFORM_MAX_PATH];
-	char map[PLATFORM_MAX_PATH];
+	s_LastAttemptTime = GetTime();
+
+	g_aMapList.Clear();
+	g_smMapList.Clear();
+
 	while( results.FetchRow() )
 	{
-		results.FetchString( 0, id, sizeof( id ) );
+		char map[PLATFORM_MAX_PATH];
+
+		int id = results.FetchInt( 0 );
 		results.FetchString( 1, map, sizeof( map ) );
 
 		//no validation since maps will be downloaded regardless
 
 		g_aMapList.PushString( map );
-		g_smMapList.SetString( map, id, true );
+		g_smMapList.SetValue( map, id, true );
 	}
+
+	SortADTArrayCustom(g_aMapList, SortNominateMenu);
 
 	CreateNominateMenu();
 }
@@ -1015,16 +971,24 @@ void ClearRTV()
 /* Timers */
 public Action Timer_ChangeMap( Handle timer )
 {
-	char id[PLATFORM_MAX_PATH];
+	static int s_LastAttemptTime = 0;
 
-	g_smMapList.GetString( g_cNextMap, id, sizeof( id ) );
-	PrintToConsoleAll( "map: '%s' id: '%s'",g_cNextMap, id );
+	int id;
+	g_smMapList.GetValue( g_cNextMap, id );
+	PrintToConsoleAll( "map: '%s' id: '%i'",g_cNextMap, id );
 
 	char message[256];
-	Format( message, sizeof( message ), "#### Debug Print: Changed map to %s", id );
+	FormatEx( message, sizeof( message ), "#### Debug Print: Changed map to %i", id );
 	DebugPrint( message );
-	Format( id, sizeof( id ), "host_workshop_map %s", id );
-	ServerCommand( id );
+	if((GetTime() - s_LastAttemptTime) > 10)
+	{
+		ServerCommand( "host_workshop_map %i", id );
+		s_LastAttemptTime = GetTime();
+	}
+	else
+	{
+		LogMessage("Server Attempted multiple map changes. \nmap: '%s' id: '%i'", g_cNextMap, id);
+	}
 
 	return Plugin_Handled;
 }
@@ -1082,13 +1046,17 @@ public Action Command_Nominate( int client, int args )
 	GetCmdArg( 1, mapname, sizeof( mapname ) );
 	if( SMC_FindMap( mapname, mapname, sizeof( mapname ) ) )
 	{
-		if( StrEqual( mapname, g_cMapName ) )
+		int currentid, newid;
+		g_smMapList.GetValue( mapname, newid );
+		g_smMapList.GetValue( g_cMapName, currentid );
+		// check for workshop id instead of map names
+		if( currentid == newid )
 		{
 			ReplyToCommand( client, "[SMC] %t", "Can't Nominate Current Map" );
 			return Plugin_Handled;
 		}
 
-		int idx = g_aOldMaps.FindString( mapname );
+		int idx = g_aOldMaps.FindValue( newid );
 		if( idx != -1 )
 		{
 			ReplyToCommand( client, "[SMC] %s %t", mapname, "Recently Played" );
@@ -1123,13 +1091,13 @@ public Action Command_UnNominate( int client, int args )
 	}
 }
 
-public Action Command_SMap( int client, int args )
+public Action Command_SMap( int client, const char[] command, int argc )
 {
-	if ( args < 1 )
+	if ( argc < 1 )
 	{
 		ReplyToCommand( client, "[SM] Usage: sm_smap <map>" );
 
-		return Plugin_Handled;
+		return Plugin_Stop;
 	}
 	if ( !CheckCommandAccess( client, "sm_ban", ADMFLAG_CHANGEMAP, true ) )
 	{
@@ -1137,7 +1105,7 @@ public Action Command_SMap( int client, int args )
 		if ( count > 1 )
 		{
 			ReplyToCommand( client, "[SM] ERROR: Cannot change map with other players on. Count: %i", count );
-			return Plugin_Handled;
+			return Plugin_Stop;
 		}
 	}
 
@@ -1157,7 +1125,7 @@ public Action Command_SMap( int client, int args )
 	}
 
 
-	return Plugin_Handled;
+	return Plugin_Stop;
 }
 
 public Action Command_Nextmap( int client, int args )
@@ -1185,6 +1153,7 @@ void CreateNominateMenu()
 	g_hNominateMenu = new Menu( NominateMenuHandler );
 
 	g_hNominateMenu.SetTitle( "Nominate Menu" );
+	g_hNominateMenu.RemoveAllItems();
 
 	int length = g_aMapList.Length;
 	for( int i = 0; i < length; ++i )
@@ -1193,12 +1162,16 @@ void CreateNominateMenu()
 		char mapname[PLATFORM_MAX_PATH];
 		g_aMapList.GetString( i, mapname, sizeof( mapname ) );
 
-		if( StrEqual( mapname, g_cMapName ) )
+		int currentid, newid;
+		g_smMapList.GetValue( mapname, newid );
+		g_smMapList.GetValue( g_cMapName, currentid );
+		// check for workshop id instead of map names
+		if( currentid == newid )
 		{
 			style = ITEMDRAW_DISABLED;
 		}
 
-		int idx = g_aOldMaps.FindString( mapname );
+		int idx = g_aOldMaps.FindValue( newid );
 		if( idx != -1 )
 		{
 			style = ITEMDRAW_DISABLED;
@@ -1218,6 +1191,17 @@ void CreateNominateMenu()
 		}
 		g_hNominateMenu.AddItem( mapname, mapdisplay, style );
 	}
+}
+
+public int SortNominateMenu(int index1, int index2, Handle array, Handle hndl)
+{
+	ArrayList list = view_as<ArrayList>(array);
+	char buffer1[PLATFORM_MAX_PATH];
+	char buffer2[PLATFORM_MAX_PATH];
+	list.GetString(index1, buffer1, PLATFORM_MAX_PATH);
+	list.GetString(index2, buffer2, PLATFORM_MAX_PATH);
+	
+	return strcmp(buffer1, buffer2, false);
 }
 
 void OpenNominateMenu( int client )
@@ -1634,7 +1618,7 @@ stock void GetMapName( char[] buffer, int size, bool current = false )
 stock void Set_NextMap( const char[] map )
 {
 	PrintToConsoleAll("Nextmap Set: %s", map);
-	Format( g_cNextMap, sizeof( g_cNextMap ), "%s", map );
+	strcopy( g_cNextMap, sizeof( g_cNextMap ), map );
 }
 
 public int Native_GetNextMap( Handle handler, int numParams )
@@ -1698,16 +1682,10 @@ public any Native_ChangeMap(Handle plugin, int numParams)
 
 void DB_FindMap( char[] id )
 {
-	Database temp = null;
-
 	char buffer[512];
-	char error[512];
-
-	temp = SQLite_UseDatabase( "db_mapcycle", error, sizeof( error ) );
-
-	Format( buffer, sizeof( buffer ), "SELECT WorkshopID, Map FROM db_maplist WHERE WorkshopID = %s ORDER BY Map ASC", id );
-	temp.Query( FindMapCallback, buffer, _, DBPrio_Low );
-	delete temp;
+	
+	FormatEx( buffer, sizeof( buffer ), "SELECT WorkshopID, Map FROM db_maplist WHERE WorkshopID = %i ORDER BY Map ASC LIMIT 1", StringToInt( id ) );
+	g_hDatabase.Query( FindMapCallback, buffer, _, DBPrio_Low );
 }
 
 public void FindMapCallback( Database db, DBResultSet results, const char[] error, any data )
@@ -1718,19 +1696,24 @@ public void FindMapCallback( Database db, DBResultSet results, const char[] erro
 		return;
 	}
 
-	char id[PLATFORM_MAX_PATH];
-	char map[PLATFORM_MAX_PATH];
-	results.FetchRow();
+	if(results.FetchRow())
+	{
+		char map[PLATFORM_MAX_PATH];
+		int id = results.FetchInt( 0 );
+		results.FetchString( 1, map, sizeof( map ) );
 
-	results.FetchString( 0, id, sizeof( id ) );
-	results.FetchString( 1, map, sizeof( map ) );
+		g_smMapList.SetValue( map, id, true );//ensure that the map is in the maplist properly
+		
 
-	g_smMapList.SetString( map, id, true );//ensure that the map is in the maplist properly
+		PrintToChatAll( "[SMC] Force Changing Map To: %s", map );
+		LogMessage( "[SMC] Force Changing Map To: %s", map );
 
-	PrintToChatAll( "[SMC] Force Changing Map To: %s", map );
-	LogMessage( "[SMC] Force Changing Map To: %s", map );
-
-	ChangeMapDelayed( map );
+		ChangeMapDelayed( map );
+	}
+	else
+	{
+		LogError( "[SMC] - ( FindMapCallback ) - Failed to fetch results" );
+	}
 }
 
 int GetPlayerCount(bool includeSpec = true)
