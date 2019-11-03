@@ -10,7 +10,7 @@
 // for MapChange type
 #include <mapchooser>
 
-#define PLUGIN_VERSION "2.0.0.2"
+#define PLUGIN_VERSION "2.0.0.4"
 
 Database g_hDatabase;
 char g_cSQLPrefix[32];
@@ -68,6 +68,11 @@ float g_fLastMapvoteTime = 0.0;
 int g_iExtendCount;
 
 Menu g_hNominateMenu;
+
+#define MAXTIERS 10 + 1
+//0-10
+Menu g_hTiersMenu[MAXTIERS];
+Menu g_hNormalMenu;
 Menu g_hVoteMenu;
 
 /* Player Data */
@@ -167,6 +172,13 @@ public void OnPluginStart()
 	//mp_win_panel_display_time = FindConVar( "mp_win_panel_display_time" );
 	mp_teamname_1 = FindConVar( "mp_teamname_1" );
 	mp_teamname_2 = FindConVar( "mp_teamname_2" );
+
+	char error[512];
+	g_hDatabase = SQLite_UseDatabase( "db_mapcycle", error, sizeof( error ) );
+	if( error[0] != 0 )
+	{
+		LogError(error);
+	}
 
 	#if defined DEBUG
 	RegConsoleCmd( "sm_smcdebug", Command_Debug );
@@ -1151,9 +1163,20 @@ void CreateNominateMenu()
 {
 	delete g_hNominateMenu;
 	g_hNominateMenu = new Menu( NominateMenuHandler );
-
 	g_hNominateMenu.SetTitle( "Nominate Menu" );
-	g_hNominateMenu.RemoveAllItems();
+
+	delete g_hNormalMenu;
+	g_hNormalMenu = new Menu( NominateSubMenuHandler );
+	g_hNormalMenu.SetTitle( "All Maps" );
+	g_hNormalMenu.ExitBackButton = true;
+
+	for(int i = 0; i < MAXTIERS; ++i)
+	{
+		delete g_hTiersMenu[i];
+		g_hTiersMenu[i] = new Menu( NominateSubMenuHandler );
+		g_hTiersMenu[i].ExitBackButton = true;
+		g_hTiersMenu[i].SetTitle( "Tier %i", i );
+	}
 
 	int length = g_aMapList.Length;
 	for( int i = 0; i < length; ++i )
@@ -1179,17 +1202,39 @@ void CreateNominateMenu()
 
 		char mapdisplay[PLATFORM_MAX_PATH + 32];
 
+		int tier = Shavit_GetMapTier( mapname );
+
 		if(g_cvMapVoteShowTier.BoolValue)
 		{
-			int tier = Shavit_GetMapTier( mapname );
-
 			Format( mapdisplay, sizeof( mapdisplay ), "%s ( Tier %i )", mapname, tier );
 		}
 		else
 		{
 			strcopy (mapdisplay, sizeof( mapdisplay ), mapname );
 		}
-		g_hNominateMenu.AddItem( mapname, mapdisplay, style );
+
+		g_hNormalMenu.AddItem( mapname, mapdisplay, style );
+		g_hTiersMenu[tier].AddItem(  mapname, mapdisplay, style );
+	}
+
+	g_hNominateMenu.AddItem("ALL", "All Maps");
+
+	for(int i = 0; i < MAXTIERS; ++i)
+	{
+		if( g_hTiersMenu[i].ItemCount > 0 )
+		{
+			char info[32];
+			FormatEx(info, 32, "T%i", i);
+
+			char display[32];
+			FormatEx(display, 32, "Tier %i", i);
+
+			g_hNominateMenu.AddItem(info, display);
+		}
+		else
+		{
+			delete g_hTiersMenu[i];
+		}
 	}
 }
 
@@ -1213,10 +1258,49 @@ public int NominateMenuHandler( Menu menu, MenuAction action, int param1, int pa
 {
 	if( action == MenuAction_Select )
 	{
-		char mapname[PLATFORM_MAX_PATH];
-		menu.GetItem( param2, mapname, sizeof( mapname ) );
+		if( IsClientInGame( param1 ) )
+		{
+			char item[32];
+			menu.GetItem( param2, item, sizeof( item ) );
+			if( StrEqual(item, "ALL"))
+			{
+				g_hNormalMenu.Display(param1, MENU_TIME_FOREVER);
+			}
+			else
+			{
+				for(int i = 0; i < MAXTIERS; ++i)
+				{
+					char tier[32];
+					FormatEx(tier, 32, "T%i", i);
+					if( StrEqual( item, tier ) )
+					{
+						g_hTiersMenu[i].Display(param1, MENU_TIME_FOREVER);
+						break;
+					}
+				}
+			}
+		}
+	}
+}
 
-		Nominate( param1, mapname );
+public int NominateSubMenuHandler( Menu menu, MenuAction action, int param1, int param2 )
+{
+	if( action == MenuAction_Select )
+	{
+		if( IsClientInGame( param1 ) )
+		{
+			char mapname[PLATFORM_MAX_PATH];
+			menu.GetItem( param2, mapname, sizeof( mapname ) );
+
+			Nominate( param1, mapname );
+		}
+	}
+	else if( action == MenuAction_Cancel && param2 == MenuCancel_ExitBack )
+	{
+		if( IsClientInGame( param1 ) )
+		{
+			g_hNominateMenu.Display( param1, MENU_TIME_FOREVER );
+		}
 	}
 }
 
