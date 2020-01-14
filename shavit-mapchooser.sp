@@ -860,14 +860,14 @@ void SMC_NominateMatches( int client, const char[] mapname)
 			
 			subNominateMenu.AddItem( entry, mapdisplay );
 		}
-    }
+    	}
     
 	switch (subNominateMenu.ItemCount) 
 	{
-    	case 0:
-    	{
-    		if (isCurrentMap) 
+    		case 0:
     		{
+    			if (isCurrentMap) 
+    			{
 				ReplyToCommand( client, "[SMC] %t", "Can't Nominate Current Map" );
 			}
 			else if (isOldMap) 
@@ -878,7 +878,7 @@ void SMC_NominateMatches( int client, const char[] mapname)
 			{
 				ReplyToCommand( client, "[SMC] %t", "Map was not found", mapname );	
 			}
-    	}
+    		}
    		case 1:
    		{
 			Nominate( client, map );
@@ -982,7 +982,8 @@ public Action Command_Nominate( int client, int args )
 	{
 		SMC_NominateMatches( client, mapname );
 	}
-	else {
+	else 
+	{
 		if( SMC_FindMap( mapname, mapname, sizeof( mapname ) ) )
 		{
 			if( StrEqual( mapname, g_cMapName ) )
