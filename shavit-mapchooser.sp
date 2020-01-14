@@ -41,6 +41,8 @@ ConVar g_cvMapVoteRunOffPerc;
 ConVar g_cvMapVoteRevoteTime;
 ConVar g_cvDisplayTimeRemaining;
 
+ConVar g_cvNominateMatches;
+
 
 /* Map arrays */
 ArrayList g_aMapList;
@@ -131,6 +133,7 @@ public void OnPluginStart()
 	g_cvMapVoteRevoteTime = CreateConVar( "smc_mapvote_revotetime", "0", "How many minutes after a failed mapvote before rtv is enabled again", _, true, 0.0 );
 	g_cvDisplayTimeRemaining = CreateConVar( "smc_display_timeleft", "1", "Display remaining messages in chat", _, true, 0.0, true, 1.0 );
 
+	g_cvNominateMatches = CreateConVar("smc_nominate_matches", "1", "Prompts a menu which shows all maps which match argument",  _, true, 0.0, true, 1.0 );
 
 	AutoExecConfig();
 	
@@ -816,6 +819,77 @@ bool SMC_FindMap( const char[] mapname, char[] output, int maxlen )
 	return false;
 }
 
+void SMC_NominateMatches( int client, const char[] mapname)
+{
+	Menu subNominateMenu = new Menu( NominateMenuHandler );
+	subNominateMenu.SetTitle( "Nominate Menu\nMaps matching \"%s\"\n ", mapname );
+	bool isCurrentMap = false;
+	bool isOldMap = false;
+	char map[PLATFORM_MAX_PATH];
+	char oldMapName[PLATFORM_MAX_PATH];
+	
+	int length = g_aMapList.Length;
+	for( int i = 0; i < length; i++ )
+	{
+		char entry[PLATFORM_MAX_PATH];
+		g_aMapList.GetString( i, entry, sizeof( entry ) );
+		
+		if( StrContains( entry, mapname ) != -1 )
+		{
+			if( StrEqual( entry, g_cMapName ) )
+			{
+				isCurrentMap = true;
+				continue;
+			}
+		
+			int idx = g_aOldMaps.FindString( entry );
+			if( idx != -1 )
+			{
+				isOldMap = true;
+				oldMapName = entry;
+				continue;
+			}
+			
+			map = entry;
+			char mapdisplay[PLATFORM_MAX_PATH + 32];
+			GetMapDisplayName( entry, mapdisplay, sizeof( mapdisplay ) );
+	
+			int tier = Shavit_GetMapTier( mapdisplay );
+	
+			Format( mapdisplay, sizeof( mapdisplay ), "%s ( Tier %i )", mapdisplay, tier );
+			
+			subNominateMenu.AddItem( entry, mapdisplay );
+		}
+    }
+    
+	switch (subNominateMenu.ItemCount) 
+	{
+    	case 0:
+    	{
+    		if (isCurrentMap) 
+    		{
+				ReplyToCommand( client, "[SMC] %t", "Can't Nominate Current Map" );
+			}
+			else if (isOldMap) 
+			{
+				ReplyToCommand( client, "[SMC] %s %t", oldMapName, "Recently Played" );
+			}
+			else 
+			{
+				ReplyToCommand( client, "[SMC] %t", "Map was not found", mapname );	
+			}
+    	}
+   		case 1:
+   		{
+			Nominate( client, map );
+   		}
+   		default: 
+   		{
+			subNominateMenu.Display( client, MENU_TIME_FOREVER );
+   		}
+  	}
+}
+
 bool IsRTVEnabled()
 {
 	float time = GetGameTime();
@@ -903,28 +977,35 @@ public Action Command_Nominate( int client, int args )
 	
 	char mapname[PLATFORM_MAX_PATH];
 	GetCmdArg( 1, mapname, sizeof( mapname ) );
-	if( SMC_FindMap( mapname, mapname, sizeof( mapname ) ) )
+
+	if (g_cvNominateMatches.BoolValue)
 	{
-		if( StrEqual( mapname, g_cMapName ) )
-		{
-			ReplyToCommand( client, "[SMC] %t", "Can't Nominate Current Map" );
-			return Plugin_Handled;
-		}
-		
-		int idx = g_aOldMaps.FindString( mapname );
-		if( idx != -1 )
-		{
-			ReplyToCommand( client, "[SMC] %s %t", mapname, "Recently Played" );
-			return Plugin_Handled;
-		}
-	
-		ReplySource old = SetCmdReplySource( SM_REPLY_TO_CHAT );
-		Nominate( client, mapname );
-		SetCmdReplySource( old );
+		SMC_NominateMatches( client, mapname );
 	}
-	else
-	{
-		ReplyToCommand( client, "[SMC] %t", "Map was not found", mapname );
+	else {
+		if( SMC_FindMap( mapname, mapname, sizeof( mapname ) ) )
+		{
+			if( StrEqual( mapname, g_cMapName ) )
+			{
+				ReplyToCommand( client, "[SMC] %t", "Can't Nominate Current Map" );
+				return Plugin_Handled;
+			}
+			
+			int idx = g_aOldMaps.FindString( mapname );
+			if( idx != -1 )
+			{
+				ReplyToCommand( client, "[SMC] %s %t", mapname, "Recently Played" );
+				return Plugin_Handled;
+			}
+		
+			ReplySource old = SetCmdReplySource( SM_REPLY_TO_CHAT );
+			Nominate( client, mapname );
+			SetCmdReplySource( old );
+		}
+		else
+		{
+			ReplyToCommand( client, "[SMC] %t", "Map was not found", mapname );
+		}
 	}
 	
 	return Plugin_Handled;
@@ -941,13 +1022,11 @@ public Action Command_UnNominate( int client, int args )
 	int idx = g_aNominateList.FindString( g_cNominatedMap[client] );
 	if( idx != -1 )
 	{
+		ReplyToCommand( client, "[SMC] Successfully removed nomination for '%s'", g_cNominatedMap[client] );
 		g_aNominateList.Erase( idx );
 		g_cNominatedMap[client][0] = '\0';
 	}
 
-	ReplyToCommand( client, "[SMC] Successfully removed nomination for '%s'", g_cNominatedMap[client] );
-	
-	
 	return Plugin_Handled;
 }
 
