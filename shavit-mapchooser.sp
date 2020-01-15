@@ -1198,6 +1198,10 @@ public int NominateMenuHandler( Menu menu, MenuAction action, int param1, int pa
 	{
 		OpenEnhancedMenu( param1 );
 	}
+	else if ( action == MenuAction_End)
+	{
+		delete menu;
+	}
 }
 
 public int EnhancedMenuHandler( Menu menu, MenuAction action, int client, int param2) 
