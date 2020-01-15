@@ -42,6 +42,7 @@ ConVar g_cvMapVoteRevoteTime;
 ConVar g_cvDisplayTimeRemaining;
 
 ConVar g_cvNominateMatches;
+ConVar g_cvEnhancedMenu;
 
 
 /* Map arrays */
@@ -63,6 +64,8 @@ float g_fLastMapvoteTime = 0.0;
 int g_iExtendCount;
 
 Menu g_hNominateMenu;
+Menu g_hEnhancedMenu;
+
 Menu g_hVoteMenu;
 
 /* Player Data */
@@ -134,6 +137,7 @@ public void OnPluginStart()
 	g_cvDisplayTimeRemaining = CreateConVar( "smc_display_timeleft", "1", "Display remaining messages in chat", _, true, 0.0, true, 1.0 );
 
 	g_cvNominateMatches = CreateConVar("smc_nominate_matches", "1", "Prompts a menu which shows all maps which match argument",  _, true, 0.0, true, 1.0 );
+	g_cvEnhancedMenu = CreateConVar("smc_enhanced_menu", "1", "Nominate menu can show maps by alphabetic order and tiers",  _, true, 0.0, true, 1.0 );
 
 	AutoExecConfig();
 	
@@ -856,18 +860,18 @@ void SMC_NominateMatches( int client, const char[] mapname)
 	
 			int tier = Shavit_GetMapTier( mapdisplay );
 	
-			Format( mapdisplay, sizeof( mapdisplay ), "%s ( Tier %i )", mapdisplay, tier );
+			Format( mapdisplay, sizeof( mapdisplay ), "%s | T%i", mapdisplay, tier );
 			
 			subNominateMenu.AddItem( entry, mapdisplay );
 		}
-    	}
+    }
     
 	switch (subNominateMenu.ItemCount) 
 	{
-    		case 0:
+    	case 0:
+    	{
+    		if (isCurrentMap) 
     		{
-    			if (isCurrentMap) 
-    			{
 				ReplyToCommand( client, "[SMC] %t", "Can't Nominate Current Map" );
 			}
 			else if (isOldMap) 
@@ -878,7 +882,7 @@ void SMC_NominateMatches( int client, const char[] mapname)
 			{
 				ReplyToCommand( client, "[SMC] %t", "Map was not found", mapname );	
 			}
-    		}
+    	}
    		case 1:
    		{
 			Nominate( client, map );
@@ -971,7 +975,14 @@ public Action Command_Nominate( int client, int args )
 {
 	if( args < 1 )
 	{
-		OpenNominateMenu( client );
+		if (g_cvEnhancedMenu.BoolValue) 
+		{
+			OpenEnhancedMenu( client );
+		}
+		else 
+		{
+			OpenNominateMenu( client );
+		}
 		return Plugin_Handled;
 	}
 	
@@ -982,8 +993,7 @@ public Action Command_Nominate( int client, int args )
 	{
 		SMC_NominateMatches( client, mapname );
 	}
-	else 
-	{
+	else {
 		if( SMC_FindMap( mapname, mapname, sizeof( mapname ) ) )
 		{
 			if( StrEqual( mapname, g_cMapName ) )
@@ -1062,15 +1072,117 @@ void CreateNominateMenu()
 
 		int tier = Shavit_GetMapTier( mapdisplay );
 
-		Format( mapdisplay, sizeof( mapdisplay ), "%s ( Tier %i )", mapdisplay, tier );
+		Format( mapdisplay, sizeof( mapdisplay ), "%s | T%i", mapdisplay, tier );
 		
 		g_hNominateMenu.AddItem( mapname, mapdisplay, style );
 	}
+
+	if (g_cvEnhancedMenu.BoolValue) 
+	{
+		CreateEnhancedMenu();
+	}
+}
+
+void CreateEnhancedMenu() 
+{
+	delete g_hEnhancedMenu;
+
+	g_hEnhancedMenu = new Menu( EnhancedMenuHandler );
+	g_hEnhancedMenu.ExitBackButton = true;
+	
+	g_hEnhancedMenu.SetTitle( "Nominate Menu" );	
+	g_hEnhancedMenu.AddItem("Alphabetic", "Alphabetic");
+
+	for( int i = 0; i <= 10; ++i )
+	{
+		if ( DoesTierExist(i) ) 
+		{
+			char tierDisplay[PLATFORM_MAX_PATH + 32];
+
+			Format( tierDisplay, sizeof( tierDisplay ), "Tier %i", i );
+
+			char tierString[PLATFORM_MAX_PATH + 32];
+			Format( tierString, sizeof( tierString ), "%i", i );
+			g_hEnhancedMenu.AddItem( tierString, tierDisplay);
+		}
+	}
+}
+
+bool DoesTierExist(int tier) 
+{
+	int length = g_aMapList.Length;
+	for( int i = 0; i < length; ++i ) 
+	{
+		char mapname[PLATFORM_MAX_PATH];
+		g_aMapList.GetString( i, mapname, sizeof( mapname ) );
+		
+		char mapdisplay[PLATFORM_MAX_PATH + 32];
+		GetMapDisplayName( mapname, mapdisplay, sizeof( mapdisplay ) );
+
+		int mapTier = Shavit_GetMapTier( mapdisplay );
+
+		if (mapTier == tier) 
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void OpenNominateMenu( int client )
 {
+	if (g_cvEnhancedMenu.BoolValue) 
+	{
+		g_hNominateMenu.ExitBackButton = true;
+	}
 	g_hNominateMenu.Display( client, MENU_TIME_FOREVER );
+}
+
+void OpenEnhancedMenu( int client )
+{
+	g_hEnhancedMenu.Display( client, MENU_TIME_FOREVER );
+}
+
+void OpenNominateMenuTier( int client, int tier ) 
+{
+	Menu TierMenu = new Menu( NominateMenuHandler );
+	
+	TierMenu.SetTitle( "Nominate Menu\nTier \"%i\" Maps\n ", tier );
+	TierMenu.ExitBackButton = true;
+	
+	int length = g_aMapList.Length;
+	for( int i = 0; i < length; ++i )
+	{
+		int style = ITEMDRAW_DEFAULT;
+		char mapname[PLATFORM_MAX_PATH];
+		g_aMapList.GetString( i, mapname, sizeof( mapname ) );
+		
+		char mapdisplay[PLATFORM_MAX_PATH + 32];
+		GetMapDisplayName( mapname, mapdisplay, sizeof( mapdisplay ) );
+		
+		int mapTier = Shavit_GetMapTier( mapdisplay );
+
+		if (mapTier != tier)
+			continue;
+
+		if( StrEqual( mapname, g_cMapName ) )
+		{
+			style = ITEMDRAW_DISABLED;
+		}
+		
+		int idx = g_aOldMaps.FindString( mapname );
+		if( idx != -1 )
+		{
+			style = ITEMDRAW_DISABLED;
+		}
+
+		Format( mapdisplay, sizeof( mapdisplay ), "%s | T%i", mapdisplay, mapTier );
+		
+		TierMenu.AddItem( mapname, mapdisplay, style );
+	}
+
+	TierMenu.Display( client, MENU_TIME_FOREVER );
 }
 
 public int NominateMenuHandler( Menu menu, MenuAction action, int param1, int param2 )
@@ -1081,6 +1193,32 @@ public int NominateMenuHandler( Menu menu, MenuAction action, int param1, int pa
 		menu.GetItem( param2, mapname, sizeof( mapname ) );
 		
 		Nominate( param1, mapname );
+	}
+	else if ( action == MenuAction_Cancel && param2 == MenuCancel_ExitBack) 
+	{
+		OpenEnhancedMenu( param1 );
+	}
+}
+
+public int EnhancedMenuHandler( Menu menu, MenuAction action, int client, int param2) 
+{
+	if ( action == MenuAction_Select ) 
+	{
+		char option[PLATFORM_MAX_PATH];
+		menu.GetItem( param2, option, sizeof( option ) );
+
+		if (StrEqual( option , "Alphabetic" )) 
+		{
+			OpenNominateMenu( client );
+		}
+		else 
+		{
+			OpenNominateMenuTier(client, StringToInt( option ) );
+		}
+	}
+	else if ( action == MenuAction_Cancel && param2 == MenuCancel_ExitBack) 
+	{
+		OpenEnhancedMenu( client );
 	}
 }
 
