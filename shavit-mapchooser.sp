@@ -825,7 +825,7 @@ bool SMC_FindMap( const char[] mapname, char[] output, int maxlen )
 
 void SMC_NominateMatches( int client, const char[] mapname)
 {
-	Menu subNominateMenu = new Menu( NominateMenuHandler );
+	Menu subNominateMenu = new Menu( NominateMenuHandlerDelete );
 	subNominateMenu.SetTitle( "Nominate Menu\nMaps matching \"%s\"\n ", mapname );
 	bool isCurrentMap = false;
 	bool isOldMap = false;
@@ -1146,7 +1146,7 @@ void OpenEnhancedMenu( int client )
 
 void OpenNominateMenuTier( int client, int tier ) 
 {
-	Menu TierMenu = new Menu( NominateMenuHandler );
+	Menu TierMenu = new Menu( NominateMenuHandlerDelete );
 	
 	TierMenu.SetTitle( "Nominate Menu\nTier \"%i\" Maps\n ", tier );
 	TierMenu.ExitBackButton = true;
@@ -1197,6 +1197,25 @@ public int NominateMenuHandler( Menu menu, MenuAction action, int param1, int pa
 	else if ( action == MenuAction_Cancel && param2 == MenuCancel_ExitBack) 
 	{
 		OpenEnhancedMenu( param1 );
+	}
+}
+
+public int NominateMenuHandlerDelete( Menu menu, MenuAction action, int param1, int param2 )
+{
+	if( action == MenuAction_Select )
+	{
+		char mapname[PLATFORM_MAX_PATH];
+		menu.GetItem( param2, mapname, sizeof( mapname ) );
+		
+		Nominate( param1, mapname );
+	}
+	else if ( action == MenuAction_Cancel && param2 == MenuCancel_ExitBack) 
+	{
+		OpenEnhancedMenu( param1 );
+	}
+	else if (action == MenuAction_End)
+	{
+		delete menu;
 	}
 }
 
