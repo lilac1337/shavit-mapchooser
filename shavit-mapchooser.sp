@@ -1187,11 +1187,7 @@ void OpenNominateMenuTier( int client, int tier )
 
 public int NominateMenuHandler( Menu menu, MenuAction action, int param1, int param2 )
 {
-	if ( action == MenuAction_End ) 
-	{
-		delete menu;
-	}
-	else if( action == MenuAction_Select )
+	if( action == MenuAction_Select )
 	{
 		char mapname[PLATFORM_MAX_PATH];
 		menu.GetItem( param2, mapname, sizeof( mapname ) );
@@ -1206,11 +1202,7 @@ public int NominateMenuHandler( Menu menu, MenuAction action, int param1, int pa
 
 public int EnhancedMenuHandler( Menu menu, MenuAction action, int client, int param2) 
 {
-	if ( action == MenuAction_End ) 
-	{
-		delete menu;
-	}
-	else if ( action == MenuAction_Select ) 
+	if ( action == MenuAction_Select ) 
 	{
 		char option[PLATFORM_MAX_PATH];
 		menu.GetItem( param2, option, sizeof( option ) );
