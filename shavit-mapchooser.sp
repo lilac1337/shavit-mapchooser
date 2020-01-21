@@ -191,7 +191,6 @@ public void OnConfigsExecuted()
 	// cache the nominate menu so that it isn't being built every time player opens it
 }
 
-
 public void OnMapEnd()
 {
 	if( g_cvMapVoteBlockMapInterval.IntValue > 0 )
@@ -825,7 +824,7 @@ bool SMC_FindMap( const char[] mapname, char[] output, int maxlen )
 
 void SMC_NominateMatches( int client, const char[] mapname)
 {
-	Menu subNominateMenu = new Menu( NominateMenuHandlerDelete );
+	Menu subNominateMenu = new Menu( NominateMenuHandler );
 	subNominateMenu.SetTitle( "Nominate Menu\nMaps matching \"%s\"\n ", mapname );
 	bool isCurrentMap = false;
 	bool isOldMap = false;
@@ -882,10 +881,20 @@ void SMC_NominateMatches( int client, const char[] mapname)
 			{
 				ReplyToCommand( client, "[SMC] %t", "Map was not found", mapname );	
 			}
+
+			if (subNominateMenu != INVALID_HANDLE)
+			{
+				CloseHandle(subNominateMenu);
+			}
     	}
    		case 1:
    		{
 			Nominate( client, map );
+
+			if (subNominateMenu != INVALID_HANDLE)
+			{
+				CloseHandle(subNominateMenu);
+			}
    		}
    		default: 
    		{
@@ -1108,7 +1117,7 @@ void CreateEnhancedMenu()
 	}
 }
 
-bool DoesTierExist(int tier) 
+bool DoesTierExist( int tier ) 
 {
 	int length = g_aMapList.Length;
 	for( int i = 0; i < length; ++i ) 
@@ -1146,7 +1155,7 @@ void OpenEnhancedMenu( int client )
 
 void OpenNominateMenuTier( int client, int tier ) 
 {
-	Menu TierMenu = new Menu( NominateMenuHandlerDelete );
+	Menu TierMenu = new Menu( NominateMenuHandler );
 	
 	TierMenu.SetTitle( "Nominate Menu\nTier \"%i\" Maps\n ", tier );
 	TierMenu.ExitBackButton = true;
@@ -1198,24 +1207,12 @@ public int NominateMenuHandler( Menu menu, MenuAction action, int param1, int pa
 	{
 		OpenEnhancedMenu( param1 );
 	}
-}
-
-public int NominateMenuHandlerDelete( Menu menu, MenuAction action, int param1, int param2 )
-{
-	if( action == MenuAction_Select )
+	else if ( action == MenuAction_End ) 
 	{
-		char mapname[PLATFORM_MAX_PATH];
-		menu.GetItem( param2, mapname, sizeof( mapname ) );
-		
-		Nominate( param1, mapname );
-	}
-	else if ( action == MenuAction_Cancel && param2 == MenuCancel_ExitBack) 
-	{
-		OpenEnhancedMenu( param1 );
-	}
-	else if (action == MenuAction_End)
-	{
-		delete menu;
+		if (menu != g_hNominateMenu && menu != INVALID_HANDLE) 
+		{
+			CloseHandle( menu );
+		}
 	}
 }
 
@@ -1614,4 +1611,3 @@ stock void DebugPrint( const char[] message, any ... )
 		}
 	}
 }
-
