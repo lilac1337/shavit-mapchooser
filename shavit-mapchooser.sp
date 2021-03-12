@@ -1407,7 +1407,10 @@ public Action Command_NomList(int client, int args)
 
 public int Null_Callback(Menu menu, MenuAction action, int param1, int param2)
 {
-	delete menu;
+	if (action == MenuAction_End)
+	{
+		delete menu;
+	}
 }
 
 #if defined DEBUG
