@@ -1541,7 +1541,7 @@ stock int GetRTVVotesNeeded()
 		}
 	}
 	
-	int Needed = RoundToFloor(total * (g_cvRTVRequiredPercentage.FloatValue / 100));
+	int Needed = RoundToNearest(total * (g_cvRTVRequiredPercentage.FloatValue / 100));
 	
 	// always clamp to 1, so if rtvcount is 0 it never initiates RTV
 	if(Needed < 1)
@@ -1602,7 +1602,7 @@ stock int GetRTVTotalNeeded()
 		}
 	}
 	
-	int Needed = RoundToFloor(total * (g_cvRTVRequiredPercentage.FloatValue / 100));
+	int Needed = RoundToNearest(total * (g_cvRTVRequiredPercentage.FloatValue / 100));
 	
 	// always clamp to 1, so if rtvcount is 0 it never initiates RTV
 	if(Needed < 1)
